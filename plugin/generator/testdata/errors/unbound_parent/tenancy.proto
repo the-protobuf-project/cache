@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+// tenancy.proto is the case the generator exists to refuse.
+//
+// Document is nested under {user} by its AIP pattern, and nothing binds {user}
+// into the cache namespace. Every user's documents would share one keyspace, and
+// because a cache answers before the store is consulted, the first hit would
+// serve whichever document was cached first — regardless of who asked.
+//
+// Nothing about this proto is otherwise wrong. It is valid AIP, it generates a
+// correct schema under protoc-gen-store, and the store's own row-level scoping
+// would handle it. That is exactly why the refusal has to happen here: there is
+// no later stage that can notice.
+package tenancy.v1;
+
+import "cache/v1/annotations.proto";
+import "entity/v1/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "TenancyProto";
+option java_package = "com.tenancy.v1";
+option (entity.v1.datasource) = {database: "tenancy_db"};
+
+// User owns documents.
+message User {
+  option (google.api.resource) = {
+    type: "tenancy.v1/User"
+    pattern: "users/{user}"
+    singular: "user"
+    plural: "users"
+  };
+
+  // name is the AIP resource name, demoted to a lookup column by the id strategy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+}
+
+// Document is nested under User — and does not say so to the cache.
+message Document {
+  option (google.api.resource) = {
+    type: "tenancy.v1/Document"
+    pattern: "users/{user}/documents/{document}"
+    singular: "document"
+    plural: "documents"
+  };
+  option (cache.v1.cache) = {
+    enabled: true
+    strategy: STRATEGY_ASIDE
+  };
+
+  // name is the AIP resource name, demoted to a lookup column by the id strategy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The parent's id is here, and carries a resource_reference naming the parent
+  // type — but no (cache.v1.cache_scope). Binding is deliberately explicit: an
+  // inference that fired on a column's shape alone would make the refusal
+  // unreachable, since protokit materializes a parent column for every nested
+  // resource whether or not anyone thought about tenancy.
+  string user_id = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {type: "tenancy.v1/User"}
+  ];
+
+  // An ordinary field, here only so Document has something besides its keys.
+  string title = 3;
+}

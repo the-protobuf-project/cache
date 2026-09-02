@@ -1,0 +1,74 @@
+{{ define "indexes" }}
+{{- if .HasIndexes }}
+// refile writes the entry into the Indexed strategy and files it under each
+// index, replacing whatever it was filed under before.
+//
+// Update before Create, rather than Create alone, because only Update refiles.
+// Create adds index members; it does not remove the ones already there. So a
+// {{ .Model }} whose indexed column *changed* would stay findable under its old
+// value until the entry expired — which is the exact bug hand-rolled secondary
+// indexes are famous for, and the one core.Indexed.Update exists to avoid. Create
+// is the fallback for the entry not being there yet, which is the ordinary case
+// on insert.
+func (s *cached{{ .Model }}Store) refile(ctx context.Context, m *{{ $.StorePackage }}.{{ .Model }}) error {
+	opts := []cache.Option{
+{{- range $.AsideOptions }}
+		{{ . }},
+{{- end }}
+	}
+{{- range .Indexes }}
+{{- if .Optional }}
+	// {{ .GoField }} is nullable in the store's model. An unset value is left
+	// unfiled rather than filed under "", which would collect every {{ $.Model }}
+	// missing the field into one key — a hot key made of unrelated entries.
+	if m.{{ .GoField }} != nil {
+		opts = append(opts, cache.Index({{ printf "%q" .Field }}, *m.{{ .GoField }}))
+	}
+{{- else }}
+	opts = append(opts, cache.Index({{ printf "%q" .Field }}, m.{{ .GoField }}))
+{{- end }}
+{{- end }}
+
+	err := s.indexed.Update(ctx, m.{{ .PKField }}, m, opts...)
+	if !errors.Is(err, cache.ErrNotFound) {
+		return err
+	}
+	// A fresh slice: appending to opts here would write into the array the loop
+	// above built, which the Update call above still refers to.
+	create := make([]cache.Option, 0, len(opts)+1)
+	create = append(create, opts...)
+	create = append(create, cache.ID(m.{{ .PKField }}))
+	_, err = s.indexed.Create(ctx, m, create...)
+	return err
+}
+{{- end }}
+{{- if .HasIndexes }}
+{{- range .Indexes }}
+
+// By{{ .Accessor }} returns every cached {{ $.Model }} {{ .Doc }}
+//
+// It reads the cache only. A miss is an empty slice, not a load: "which entries
+// match?" is a different question from "fetch me this one", and answering it from
+// the store would mean a query this decorator has no way to write.
+func (s *cached{{ $.Model }}Store) By{{ .Accessor }}(ctx context.Context, v string) ([]{{ $.StorePackage }}.{{ $.Model }}, error) {
+	var out []{{ $.StorePackage }}.{{ $.Model }}
+	if err := s.indexed.ByIndex(ctx, {{ printf "%q" .Field }}, v, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// IDsBy{{ .Accessor }} returns the ids {{ .Doc }}, for when decoding every value
+// would be waste.
+func (s *cached{{ $.Model }}Store) IDsBy{{ .Accessor }}(ctx context.Context, v string) ([]string, error) {
+	return s.indexed.IDsByIndex(ctx, {{ printf "%q" .Field }}, v)
+}
+
+// DeleteBy{{ .Accessor }} drops every cached entry {{ .Doc }} and reports how many
+// went. It touches the cache only — the rows are untouched.
+func (s *cached{{ $.Model }}Store) DeleteBy{{ .Accessor }}(ctx context.Context, v string) (int, error) {
+	return s.indexed.DeleteByIndex(ctx, {{ printf "%q" .Field }}, v)
+}
+{{- end }}
+{{- end }}
+{{ end }}

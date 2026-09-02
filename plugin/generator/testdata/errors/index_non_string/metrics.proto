@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+// metrics.proto indexes a non-string column.
+//
+// The runtime's secondary index is keyed by string end to end — core files ids
+// under "field=value" members of a set — so filing an int32 means choosing a
+// rendering for it. This generator refuses to choose one, because anything else
+// reading that index by a hand-written key would have to guess the same choice.
+package metrics.v1;
+
+import "cache/v1/annotations.proto";
+import "entity/v1/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "MetricsProto";
+option java_package = "com.metrics.v1";
+option (entity.v1.datasource) = {database: "metrics_db"};
+
+// Sample is INDEXED, so an index annotation is legal here — the problem is the
+// column's type, not the strategy.
+message Sample {
+  option (google.api.resource) = {
+    type: "metrics.v1/Sample"
+    pattern: "samples/{sample}"
+    singular: "sample"
+    plural: "samples"
+  };
+  option (cache.v1.cache) = {
+    enabled: true
+    strategy: STRATEGY_INDEXED
+  };
+
+  // name is the AIP resource name, demoted to a lookup column by the id strategy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // The refusal: the runtime's index is keyed by string end to end, and this
+  // generator will not invent a rendering for an int.
+  int32 bucket = 2 [(cache.v1.cache_index) = {}];
+}

@@ -1,0 +1,60 @@
+version: v2
+
+# This buf.yaml defines a workspace:
+#   protobuf/cache/  — a publishable BSR module (buf.build/the-protobuf-project/cache)
+#   examples/proto/  — sample annotated protos that consume the options (local only)
+#
+# cache.v1 is this plugin's own vocabulary: which resources are cached, under
+# which strategy, with which index fields, and — the part that carries a security
+# guarantee rather than a preference — which fields bind the parent segments of a
+# resource's pattern into the cache namespace.
+#
+# It expresses nothing about a backend. Redis, Dragonfly and memcached differ in
+# what they can do, and runtime-go/cache already models that as capabilities the
+# driver either implements or does not. Naming one here would make a schema
+# annotation the place a deployment decision got written down.
+#
+# It also expresses nothing about key layout. runtime-go/cache/core/keyspace.go
+# owns that entirely ({head}cache:aside:entry:{id} and the rest). This plugin
+# generates the namespace the keyspace is built *under*, and never a key inside
+# it — two keyspaces that must agree is one keyspace too many.
+#
+# The module is rooted at protobuf/ with `includes`, not at protobuf/cache/,
+# because buf derives a proto's import path from its module root. Rooted at
+# protobuf/cache it would publish "v1/cache.proto"; rooted at protobuf/ with
+# includes it publishes "cache/v1/cache.proto", which is what every importing
+# proto writes. This mirrors how store publishes entity.v1 and store.v1.
+#
+# Only protobuf/ has a BSR name, so publish with:
+#   buf push --exclude-unnamed
+modules:
+  - path: protobuf
+    includes: [protobuf/cache]
+    name: buf.build/the-protobuf-project/cache
+
+  - path: examples/proto
+    # examples/proto imports entity.v1, store.v1, cache.v1 and googleapis. The
+    # first two come from the BSR deps below; cache.v1 comes from this workspace.
+
+# One dep covers both vocabularies this repository consumes: the store BSR module
+# is rooted at that repository's protobuf/ directory and so publishes entity/v1
+# alongside store/v1. There is no buf.build/the-protobuf-project/entity to depend
+# on — the store repo's buf.yaml declares one, but it has never been pushed.
+#
+# That is worth knowing rather than working around: entity.v1 is the vocabulary
+# whose whole purpose is to be depended on *without* taking on the store plugin,
+# and today taking it on is the only way to get it. The Go side has the same
+# shape (see docs/boundary-findings.md, finding 5).
+deps:
+  - buf.build/googleapis/googleapis # google.api.resource, field_behavior, resource_reference
+  - buf.build/the-protobuf-project/store # entity/v1 + store/v1
+
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX # cache.v1 is intentionally version-suffixed
+
+breaking:
+  use:
+    - FILE # enforce no breaking changes at the file level

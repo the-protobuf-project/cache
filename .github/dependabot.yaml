@@ -1,0 +1,62 @@
+# Dependabot: automated dependency updates
+# https://docs.github.com/en/code-security/dependabot
+#
+# Pull requests opened from here are merged automatically once every check on the
+# commit has passed — see .github/workflows/dependabot-auto-merge.yaml and
+# .github/AUTOMATION.md. Nothing else needs configuring for that to work.
+
+version: 2
+updates:
+  # The plugin: the generator, the cache.v1 stubs, and the reader.
+  - package-ecosystem: 'gomod'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'go'
+    groups:
+      # Grouped so one weekly PR carries the routine bumps rather than five that
+      # each run the full matrix. Majors are deliberately excluded and arrive as
+      # individual PRs: they are the ones most likely to change generated output,
+      # and a group diff is the wrong place to notice that.
+      go-minor-and-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  # examples/ is a module of its own and is not reachable from the root's
+  # dependency graph, so it needs its own entry or its dependencies — the cache
+  # runtime, gorm, go-redis — would never be updated. It is also the only module
+  # here that depends on runtime-go, which is untagged: expect pseudo-version
+  # bumps rather than releases, and see docs/boundary-findings.md, finding 5, for
+  # why its three `replace` lines must survive them.
+  - package-ecosystem: 'gomod'
+    directory: '/examples'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'go'
+      - 'examples'
+    groups:
+      examples-minor-and-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'ci'
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: ['minor', 'patch']

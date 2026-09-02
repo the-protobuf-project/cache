@@ -1,0 +1,164 @@
+version: 2
+project_name: protoc-gen-cache
+
+before:
+  hooks:
+    - go mod tidy
+    # The root module's tests only. examples/ is a separate module whose tests
+    # exercise generated code against a fake driver, and the Redis integration
+    # lives in test.yaml where a service container exists. The release gate is
+    # that the generator builds and its golden, agreement and refusal tests pass;
+    # a tag is only ever cut from a commit that already passed the full matrix.
+    - go test ./...
+
+builds:
+  # One binary. Unlike its sibling repositories there is no second entry point:
+  # this plugin generates code and drives no toolchain, so there is nothing for a
+  # CLI to do that `buf generate` does not.
+  - id: protoc-gen-cache
+    binary: protoc-gen-cache
+    main: ./plugin/cmd/protoc-gen-cache
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      # main.version is read by resolveVersion() and stamped into every generated
+      # file's banner, alongside the entity and protokit versions resolved from
+      # build info. A release binary that reported "dev" would put "dev" in the
+      # provenance line of every file it wrote.
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: protoc-gen-cache-archive
+    ids: [protoc-gen-cache]
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      # LICENSE is deliberately absent: this repository has none yet. Add the
+      # file and add it back to this list — an archive that ships code with no
+      # license terms is worse than one that ships an extra file.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - typo
+
+# Homebrew cask, generated and committed to the tap on each release. The url and
+# sha256 for every platform are filled in from the archives above, so there is no
+# checksum to hand-maintain.
+homebrew_casks:
+  - name: protoc-gen-cache
+    repository:
+      owner: the-protobuf-project
+      name: homebrew-tap
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    directory: Casks
+    homepage: 'https://github.com/the-protobuf-project/cache'
+    description: 'Generate typed read-through cache decorators over protoc-gen-store stores'
+    ids:
+      - protoc-gen-cache-archive
+    binaries:
+      - protoc-gen-cache
+    url:
+      verified: 'github.com/the-protobuf-project/cache/'
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/protoc-gen-cache"]
+          end
+
+release:
+  github:
+    owner: the-protobuf-project
+    name: cache
+  draft: false
+  prerelease: auto
+  name_template: 'v{{.Version}}'
+  header: |
+    ## What's New in v{{.Version}}
+
+    `protoc-gen-cache` generates typed read-through cache decorators over
+    [protoc-gen-store]'s generated stores, from `cache.v1` annotations on your
+    protos. The decorator implements the same `<Model>StoreIface` the store
+    emitted, so callers do not know it is cached.
+
+    It generates the *namespace* a resource's keys live under and never a key
+    inside it — `runtime-go/cache/core` owns key layout — and it refuses to emit
+    at all when a resource's AIP pattern nests it under a parent that nothing
+    binds into that namespace.
+
+    ### Installation
+
+    #### Homebrew
+    ```bash
+    brew install the-protobuf-project/tap/protoc-gen-cache
+    ```
+
+    #### Go
+    ```bash
+    go install github.com/the-protobuf-project/cache/plugin/cmd/protoc-gen-cache@v{{.Version}}
+    ```
+
+    #### Manual (macOS / Linux)
+    ```bash
+    # Pick your platform, e.g. darwin_arm64 / linux_amd64
+    curl -LO https://github.com/the-protobuf-project/cache/releases/download/v{{.Version}}/protoc-gen-cache_{{.Version}}_darwin_arm64.tar.gz
+    tar -xzf protoc-gen-cache_{{.Version}}_darwin_arm64.tar.gz
+    sudo mv protoc-gen-cache /usr/local/bin/
+    ```
+
+    ### Usage
+
+    It runs *after* protoc-gen-store, and `stores=true` is what makes the
+    interface it decorates exist:
+
+    ```yaml
+    plugins:
+      - local: protoc-gen-store
+        out: generated/gorm
+        opt: [target=gorm, stores=true, go_module=github.com/me/gen/gorm]
+
+      - local: protoc-gen-cache
+        out: generated/cache
+        opt: [store_module=github.com/me/gen/gorm]
+    ```
+
+    `store_module` is the only thing connecting the two runs — a path, not a
+    dependency.
+
+    [protoc-gen-store]: https://github.com/the-protobuf-project/store

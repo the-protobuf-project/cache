@@ -1,0 +1,77 @@
+# What protoc-gen-cache is, declared for anything that has to compose plugins.
+#
+# protokit's manifest package parses and validates most of this file; it
+# deliberately resolves nothing — no module is fetched, no constraint is compared
+# against a real version. So this is useful for exactly two things today: telling
+# a human what the plugin expects, and failing fast when that declaration
+# contradicts itself.
+#
+# One key below, requires_capability, is NOT part of protokit's manifest schema,
+# and protokit decodes strictly — an unknown key is an error, not an ignored line.
+# So this file is parsed by manifest.go in this repository, which understands the
+# extra key, strips it, and hands the rest to protokit for the shared validation.
+# See docs/boundary-findings.md, finding 1: the right long-term fix is a
+# first-class field upstream, not a parser here.
+
+# The vocabulary this plugin owns and the key its FacetReader registers under.
+provides: cache
+
+# cache cannot run on its own. It decorates protoc-gen-store's generated stores,
+# so a run that produces no store output produces a cache package importing
+# nothing that exists.
+requires:
+  - store
+
+# Proto modules and the versions of them this plugin needs.
+#   cache   — this plugin's own options.
+#   entity  — the neutral vocabulary every protokit plugin shares. Not optional
+#             in any sense: without it there are no table or column names to
+#             agree on, and the agreement is the whole point.
+annotations:
+  buf.build/the-protobuf-project/cache: '^1'
+  buf.build/the-protobuf-project/entity: '^1'
+
+# A property of what the plugin *emits*, not of what builds it.
+runtime:
+  go: '>=1.26'
+
+facets:
+  # What this plugin reads back out of the IR, per node.
+  #
+  # cache.v1 is absent despite being read on every node, for the reason store's
+  # own manifest gives about store.v1: this plugin provides it, so declaring a
+  # dependency on it would say nothing.
+  #
+  # entity.v1 is absent for the other reason: it is not a facet at all. It is
+  # structure protokit folds into databases, schemas, tables and columns during
+  # the build, so nothing here ever asks for an entity.v1 facet by node. The hard
+  # dependency on that vocabulary is real and is declared under annotations:.
+  reads: []
+
+  # store.v1 is read back per node — one field of it, ColumnOptions.unique — to
+  # tell a sound index from one that will quietly become a hot key. Optional
+  # because a build without it generates less, not wrong: every read of it
+  # returns a (value, known) pair and every caller degrades on known == false.
+  optional_reads:
+    - store.v1
+
+# The footprint, relative to the plugin's output directory.
+outputs:
+  - '**/*.go'
+
+# Driver capabilities the generated code requires, by strategy.
+#
+# The generator cannot know the driver — that is a deployment's choice, made long
+# after generation — so this is declared here for whatever eventually schedules a
+# multi-plugin run, and asserted again at construction in the generated code. The
+# two are not redundant: this one can fail a plan before anything is written, and
+# that one is the only check that sees the driver a process actually wired up.
+#
+# DOCUMENT is listed alongside INDEXED because core gates both on the same field:
+# Document.Keys and Document.List report ErrUnsupported without server-side sets,
+# and enumeration is the whole reason to choose DOCUMENT over VOLATILE.
+requires_capability:
+  INDEXED:
+    - core.Sets
+  DOCUMENT:
+    - core.Sets

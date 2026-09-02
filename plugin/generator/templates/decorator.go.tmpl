@@ -1,0 +1,198 @@
+{{ define "decorator" }}{{ range .Doc }}// {{ . }}
+{{ end }}//
+// The decorator embeds the store interface, so anything not listed below — List,
+// Count, and any method protoc-gen-store adds later — passes straight through
+// uncached. That is deliberate: a list result keyed by its filter is a different
+// cache with different invalidation, and silently serving one from here would be
+// the kind of correctness bug a cache is not supposed to introduce.
+type cached{{ .Model }}Store struct {
+	// Embedded so unlisted methods delegate. Overridden methods below shadow it.
+	{{ $.StorePackage }}.{{ .Iface }}
+
+	inner {{ $.StorePackage }}.{{ .Iface }}
+	aside cache.Aside
+	opts  options
+{{- if .HasIndexes }}
+	indexed cache.Indexed
+{{- end }}
+{{- if .HasEdges }}
+	edges {{ .EdgesType }}
+{{- end }}
+}
+
+// Compile-time proof that the decorator still satisfies the contract it wraps.
+// Without it, a signature drifting from {{ .Iface }} would only break in whatever
+// package wires the two together.
+var _ {{ $.StorePackage }}.{{ .Iface }} = (*cached{{ .Model }}Store)(nil)
+
+// NewCached{{ .Model }}Store returns a read-through {{ .Strategy }} view over inner.
+//
+// It returns an error rather than panicking because everything it checks is a
+// deployment fact rather than a programming one: which backend is behind the
+// cache, which namespace the database was opened under, whether the scope is
+// populated. Those are knowable only at wiring time, and a process that cannot
+// cache correctly should say so and exit, not crash mid-request later.
+func NewCached{{ .Model }}Store(
+	ctx context.Context,
+	inner {{ $.StorePackage }}.{{ .Iface }},
+	db *cache.DB,
+{{- if .HasScope }}
+	scope {{ .ScopeType }},
+{{- end }}
+{{- if .HasEdges }}
+	edges {{ .EdgesType }},
+{{- end }}
+	opts ...Option,
+) ({{ $.StorePackage }}.{{ .Iface }}, error) {
+	if inner == nil {
+		return nil, errors.New("cache: NewCached{{ .Model }}Store: inner store is nil")
+	}
+	if db == nil {
+		return nil, errors.New("cache: NewCached{{ .Model }}Store: cache database is nil")
+	}
+{{- if .HasScope }}
+	if err := scope.validate(); err != nil {
+		return nil, err
+	}
+{{- end }}
+	if err := assertNamespace(db, {{ .NamespaceFunc }}({{ .NamespaceCall }}), {{ printf "%q" .Node }}); err != nil {
+		return nil, err
+	}
+{{- if .AssertSets }}
+	if err := assertSets(ctx, db, {{ printf "%q" .Node }}, {{ printf "%q" .Strategy }}, {{ printf "%q" .SetsProbe }}); err != nil {
+		return nil, err
+	}
+{{- end }}
+{{- if .AssertLeases }}
+	if err := assertLeases(ctx, db, {{ printf "%q" .Node }}); err != nil {
+		return nil, err
+	}
+{{- end }}
+
+	s := &cached{{ .Model }}Store{
+		{{ .Iface }}: inner,
+		inner:        inner,
+		opts:         newOptions(opts),
+{{- if .HasIndexes }}
+		indexed: db.Indexed,
+{{- end }}
+{{- if .HasEdges }}
+		edges: edges,
+{{- end }}
+	}
+	s.aside = db.Aside(s.load)
+	return s, nil
+}
+
+// load is the read-through loader: the cache's only route back to the store.
+func (s *cached{{ .Model }}Store) load(ctx context.Context, id string) (any, error) {
+	m, err := s.inner.GetByID(ctx, id)
+	if err != nil {
+		return nil, s.opts.asNotFound(err)
+	}
+	return m, nil
+}
+
+// Invalidate drops this {{ .Model }}'s entry, and any remembered absence with it.
+// It is also what makes the decorator usable as an Invalidator on another
+// resource's edge.
+func (s *cached{{ .Model }}Store) Invalidate(ctx context.Context, id string) error {
+	return s.aside.Invalidate(ctx, id)
+}
+
+// GetByID serves from the cache, loading through to the store on a miss.
+//
+// Concurrent misses on one id collapse into a single load, and no caller blocks
+// past its own context — both are core's, not this file's.
+func (s *cached{{ .Model }}Store) GetByID(ctx context.Context, id string) (*{{ $.StorePackage }}.{{ .Model }}, error) {
+	var out {{ $.StorePackage }}.{{ .Model }}
+	if err := s.aside.GetOrLoad(ctx, id, &out{{ range .AsideOptions }}, {{ . }}{{ end }}); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Create writes through to the store, then warms the entry it just created.
+//
+// Refresh rather than Invalidate: the row exists and is about to be read, and
+// dropping the entry instead would leave every reader arriving next to miss at
+// once — the thundering miss that a cache is supposed to prevent.
+func (s *cached{{ .Model }}Store) Create(ctx context.Context, m *{{ $.StorePackage }}.{{ .Model }}) error {
+	if err := s.inner.Create(ctx, m); err != nil {
+		return err
+	}
+	return s.after(ctx, m)
+}
+
+// Update writes through, then refreshes rather than dropping, for the same
+// reason Create does.
+func (s *cached{{ .Model }}Store) Update(ctx context.Context, m *{{ $.StorePackage }}.{{ .Model }}) error {
+	if err := s.inner.Update(ctx, m); err != nil {
+		return err
+	}
+	return s.after(ctx, m)
+}
+
+// DeleteByID removes the row, then the entry.
+//
+// Invalidate, not Refresh: there is nothing to refresh to, and Invalidate also
+// drops any remembered absence — so a row deleted and recreated does not stay
+// invisible until that absence expires on its own.
+func (s *cached{{ .Model }}Store) DeleteByID(ctx context.Context, id string) error {
+	if err := s.inner.DeleteByID(ctx, id); err != nil {
+		return err
+	}
+{{- if .HasIndexes }}
+	// Unfile before dropping the entry: an index member naming an entry that is
+	// gone is swept on the next lookup, while an entry no index names is
+	// invisible to every lookup.
+	if err := s.indexed.Delete(ctx, id); err != nil && !errors.Is(err, cache.ErrNotFound) {
+		if ferr := s.opts.afterWrite(ctx, {{ printf "%q" .Node }}, "unfile", err); ferr != nil {
+			return ferr
+		}
+	}
+{{- end }}
+	return s.opts.afterWrite(ctx, {{ printf "%q" .Node }}, "invalidate", s.aside.Invalidate(ctx, id))
+}
+
+// after runs the cache-side work a write implies: refresh this entry, refile its
+// indexes, and fire this resource's declared invalidation edges.
+//
+// The edges are straight-line calls, one per declared edge, in the order the spec
+// declared them. Nothing here walks a graph.
+//
+// Every step is routed through options.afterWrite, because every step runs after
+// s.inner has already committed. By default a failure in any of them is reported
+// to WithWriteErrors and does not fail the caller's write — see afterWrite for
+// why that is the default and what it costs. One consequence is visible here: on
+// the default path a failing step does not skip the ones after it, so a broken
+// edge cannot silently cancel the others.
+//
+// They run in sequence, one round trip each. Firing them concurrently would cut
+// the latency of a write with several edges, and is deliberately not done: the
+// order is the order the spec declared, the failure attribution stays simple, and
+// a decorator is not the place to introduce a goroutine per write. If the edge
+// count on a resource ever makes this hurt, the answer the edge set was emitted
+// as data for is a CDC consumer, not a fan-out here.
+func (s *cached{{ .Model }}Store) after(ctx context.Context, m *{{ $.StorePackage }}.{{ .Model }}) error {
+	if err := s.opts.afterWrite(ctx, {{ printf "%q" .Node }}, "refresh",
+		s.aside.Refresh(ctx, m.{{ .PKField }}{{ range .AsideOptions }}, {{ . }}{{ end }})); err != nil {
+		return err
+	}
+{{- if .HasIndexes }}
+	if err := s.opts.afterWrite(ctx, {{ printf "%q" .Node }}, "refile", s.refile(ctx, m)); err != nil {
+		return err
+	}
+{{- end }}
+{{- range .EdgeWires }}
+	// {{ .Doc }}
+	if s.edges.{{ .Field }} != nil {
+		if err := s.opts.afterWrite(ctx, {{ printf "%q" $.Node }}, "invalidate {{ .TargetModel }}",
+			s.edges.{{ .Field }}.Invalidate(ctx, m.{{ .ViaGoField }})); err != nil {
+			return err
+		}
+	}
+{{- end }}
+	return nil
+}
+{{ end }}

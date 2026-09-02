@@ -1,0 +1,26 @@
+version: v2
+
+# Regenerates the pre-compiled Go stubs for the option module this repository
+# owns: cache.v1.
+#
+# Run:  buf generate --template buf.gen.yaml
+# Out:  plugin/pb/cachepbv1/*.pb.go
+#
+# The module= opt strips this module's prefix from each go_package so the output
+# lands under plugin/pb/ (go_package .../cache/plugin/pb/cachepbv1 ->
+# plugin/pb/cachepbv1). It mirrors store's arrangement exactly, which matters
+# more than it looks: a plugin's stubs are the one thing every other plugin's
+# boundary test has to be able to *recognize*, and protokit's classifier keys off
+# the "…pbv1" package-name shape these paths produce.
+#
+# buf.gen.example.yaml is the separate template that runs protoc-gen-store and
+# protoc-gen-cache over the bookstore example.
+
+inputs:
+  - directory: protobuf
+
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: .
+    opt:
+      - module=github.com/the-protobuf-project/cache

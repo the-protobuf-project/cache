@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+// tenancy.proto covers the paths the bookstore case does not: the two
+// non-fatal diagnostics, an explicit namespace template, and a scope field that
+// no parent segment claims.
+//
+// These are all *advice* rather than refusals, which is exactly why they need a
+// golden. A warning that stopped being emitted would break no build and fail no
+// other test — it would just quietly stop warning, which is the failure mode of
+// every diagnostic nobody pins.
+package tenancy.v1;
+
+import "cache/v1/annotations.proto";
+import "entity/v1/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "store/v1/annotations.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "TenancyProto";
+option java_package = "com.tenancy.v1";
+option (entity.v1.datasource) = {
+  database: "tenancy_db"
+  schema: "tenancy"
+};
+
+// Org owns everything below it.
+message Org {
+  option (google.api.resource) = {
+    type: "tenancy.v1/Org"
+    pattern: "orgs/{org}"
+    singular: "org"
+    plural: "orgs"
+  };
+  option (entity.v1.table) = {id: ID_STRATEGY_ULID};
+
+  // name is the AIP resource name, demoted to a lookup column by the id strategy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+}
+
+// Session indexes a column store.v1 does not mark unique, which is the case
+// runtime-go's Indexed contract singles out as where it "stops scaling first and
+// does it quietly": every entry sharing a status lands in one key.
+//
+// It is legal — sometimes deliberate — so the generator warns rather than
+// refusing. Only the schema author knows the cardinality.
+message Session {
+  option (google.api.resource) = {
+    type: "tenancy.v1/Session"
+    pattern: "orgs/{org}/sessions/{session}"
+    singular: "session"
+    plural: "sessions"
+  };
+  option (entity.v1.table) = {id: ID_STRATEGY_ULID};
+  option (cache.v1.cache) = {
+    enabled: true
+    strategy: STRATEGY_INDEXED
+    ttl: {seconds: 60}
+  };
+
+  // name is the AIP resource name, demoted to a lookup column by the id strategy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Binds {org}, and does so by an explicitly declared segment rather than by
+  // the column's name — the path that must win over any name-based inference.
+  string tenant = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (cache.v1.cache_scope) = {segment: "org"}
+  ];
+
+  // Low-cardinality and not unique: the warning case.
+  string status = 3 [(cache.v1.cache_index) = {}];
+
+  // Unique, so this one draws no warning — the two sit side by side so the
+  // golden shows the generator distinguishing them rather than warning on every
+  // index it sees.
+  string token = 4 [
+    (store.v1.column) = {unique: true},
+    (cache.v1.cache_index) = {}
+  ];
+}
+
+// Audit is INDEXED with nothing indexed — DOCUMENT plus bookkeeping nobody
+// reads. It usually means an annotation was dropped, so it warns.
+//
+// It also carries a namespace template, binding {org} through the template
+// rather than through a field, and a second scope field that no parent segment
+// claims (region) — the "force this field into the namespace" case, for a value
+// that separates callers without being part of the AIP pattern.
+message Audit {
+  option (google.api.resource) = {
+    type: "tenancy.v1/Audit"
+    pattern: "orgs/{org}/audits/{audit}"
+    singular: "audit"
+    plural: "audits"
+  };
+  option (entity.v1.table) = {id: ID_STRATEGY_ULID};
+  option (cache.v1.cache) = {
+    enabled: true
+    strategy: STRATEGY_INDEXED
+    namespace: "audit.{org}.{region}"
+  };
+
+  // name is the AIP resource name, demoted to a lookup column by the id strategy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Binds {org} by name — org_id matches the segment, so no explicit
+  // segment: is needed.
+  string org_id = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (cache.v1.cache_scope) = {}
+  ];
+
+  // No parent segment claims this one. It is forced into the namespace anyway,
+  // which is the case a tenant column that is not part of the AIP pattern needs.
+  string region = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (cache.v1.cache_scope) = {}
+  ];
+}

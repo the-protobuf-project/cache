@@ -1,0 +1,43 @@
+version: v2
+
+# Runs both plugins over one set of protos — which is the whole demonstration.
+#
+#   protoc-gen-store  →  examples/generated/gorm/<db>/<schema>/   models + stores
+#   protoc-gen-cache  →  examples/generated/cache/<db>/<schema>/  the decorators
+#
+# Run: buf generate --template buf.gen.example.yaml
+#
+# Note what is *not* here: any coordination between the two beyond a shared import
+# path. Neither plugin knows the other ran. They agree on every database, schema,
+# table and column name because they read the neutral vocabulary through the same
+# reader — protoc-gen-cache imports store's entity.Reader() rather than
+# reimplementing it — and golden.IRAgreement is the test that holds them to it.
+#
+# The M entries supply the Go import-path mapping protogen requires for every
+# .proto it processes, so the example protos need no `option go_package`.
+inputs:
+  - directory: examples/proto
+
+plugins:
+  - local: protoc-gen-store
+    out: examples/generated/gorm
+    opt:
+      - target=gorm
+      # go_module is the import path of this out: directory, so the generated
+      # migration aggregator can import each per-schema models package.
+      - go_module=github.com/the-protobuf-project/cache/examples/generated/gorm
+      # stores emits the typed CRUD store per resource — and with it the
+      # <Model>StoreIface that protoc-gen-cache decorates. Without this opt there
+      # is no interface to wrap and the cache output would not compile.
+      - stores=true
+      - Mbookstore/v1/bookstore.proto=github.com/the-protobuf-project/cache/examples/gen/bookstore/v1
+      - Mbookstore/v1/inventory.proto=github.com/the-protobuf-project/cache/examples/gen/bookstore/v1
+
+  - local: protoc-gen-cache
+    out: examples/generated/cache
+    opt:
+      # store_module points at the *other* plugin's out: directory. It is the only
+      # thing connecting the two runs, and it is a path rather than a dependency.
+      - store_module=github.com/the-protobuf-project/cache/examples/generated/gorm
+      - Mbookstore/v1/bookstore.proto=github.com/the-protobuf-project/cache/examples/gen/bookstore/v1
+      - Mbookstore/v1/inventory.proto=github.com/the-protobuf-project/cache/examples/gen/bookstore/v1

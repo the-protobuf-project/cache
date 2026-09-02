@@ -1,0 +1,21 @@
+{{ .Banner }}
+
+package {{ .Package }}
+
+import (
+{{- range .StdImports }}
+	{{ . }}
+{{- end }}
+
+{{ range .Imports }}	{{ . }}
+{{ end }})
+{{ template "preamble" . }}
+{{ template "asserts" . }}
+{{- range .Resources }}
+{{ range .Warnings }}
+// WARNING: {{ . }}
+{{- end }}
+{{ template "namespace" . }}
+{{ template "decorator" . }}
+{{ template "indexes" . }}
+{{- end }}

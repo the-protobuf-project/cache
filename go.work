@@ -1,0 +1,24 @@
+// A convenience workspace, and — as of store v1.5.1 — no longer load-bearing.
+//
+// It used to be committed because without it this repository did not build:
+// neither the store module nor runtime-go/cache had a resolvable version, and
+// only directory `replace`s made them reachable. Both modules below now resolve
+// from the proxy, and `GOWORK=off go build ./... && GOWORK=off go test ./...`
+// passes in each of them independently. Keep that true.
+//
+// What this file still does is group the two modules so an editor and a
+// repository-wide `go test ./...` see both at once. Nothing more — there are no
+// `replace` directives here, and adding one would quietly float a version that
+// go.mod pins.
+//
+// The one remaining unpublished dependency is runtime-go, which only examples/
+// needs; the plugin does not link against the runtime it generates calls into.
+// Because runtime-go/cache `replace`s three siblings in its own go.mod — which
+// Go ignores in a dependency — examples/go.mod restates those as replaces of its
+// own. See the comment there, and docs/boundary-findings.md, finding 5.
+go 1.26.5
+
+use (
+	.
+	./examples
+)

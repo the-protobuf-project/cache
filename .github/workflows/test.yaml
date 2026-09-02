@@ -1,0 +1,255 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # The store plugin version this repository generates against. Pinned rather
+  # than @latest for the reason golden tests exist at all: protoc-gen-store's
+  # output is the input to protoc-gen-cache's, so a floating store would make the
+  # "committed examples are current" job fail on someone else's release.
+  STORE_VERSION: v1.5.1
+  # Pinned for the same reason buffers pins it: a FileDescriptorSet's bytes
+  # depend on the compiler that produced them, and buf-setup-action's default
+  # trails well behind. Keep this in step with the buf a contributor runs.
+  BUF_VERSION: 1.72.0
+
+jobs:
+  test:
+    name: Test (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Test
+        run: go test -race ./...
+
+  examples-module:
+    name: Test (examples)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # examples/ is a module of its own, so the root's `go test ./...` never
+      # reaches it. It holds the tests that exercise the *generated* code — the
+      # construction-time refusals, the invalidation edges, the write-error
+      # policy — which is the half of this repository a consumer actually runs.
+      - name: Test
+        working-directory: examples
+        run: go test -race ./...
+
+  standalone:
+    name: Modules build standalone
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # go.work is a convenience here and must stay one. This repository needed a
+      # workspace to build at all until store was tagged under its own module
+      # path, and the way that regresses is silent: someone adds a `replace`, the
+      # workspace papers over it, and consumers discover it at `go get`.
+      #
+      # GOWORK=off is the consumer's view. See docs/boundary-findings.md,
+      # finding 5.
+      - name: Root module, no workspace
+        env:
+          GOWORK: off
+        run: go build ./... && go vet ./... && go test ./...
+
+      - name: Examples module, no workspace
+        working-directory: examples
+        env:
+          GOWORK: off
+        run: go build ./... && go vet ./... && go test ./...
+
+      # The ghost module. store/plugin/entity was a nested module, it was
+      # deleted, and its old commits are still resolvable — so requiring it puts
+      # two modules in the graph that both contain that package and every build
+      # fails with `ambiguous import`. `go mod tidy` from a thin go.mod is how it
+      # gets reintroduced, which makes this worth asserting rather than
+      # remembering.
+      - name: The deleted entity module is not in the graph
+        env:
+          GOWORK: off
+        run: |
+          if go list -m all | grep -q '^github.com/the-protobuf-project/store/plugin/entity '; then
+            echo "::error::go.mod requires github.com/the-protobuf-project/store/plugin/entity."
+            echo "That module was deleted upstream and folded into the store root, but its old"
+            echo "commits still resolve — so requiring it makes every build fail with"
+            echo "'ambiguous import'. Require github.com/the-protobuf-project/store instead."
+            echo "See docs/boundary-findings.md, finding 5."
+            exit 1
+          fi
+          echo "clean: entity resolves from the store root module"
+
+  integration:
+    name: Integration (Redis)
+    runs-on: ubuntu-latest
+
+    # A real backend, not the fake driver. This is the job that earns its keep:
+    # three of the findings in docs/boundary-findings.md — the duplicated key
+    # prefix, an INDEXED resource being stored twice, and index sets that never
+    # expire — passed every unit test in this repository and were caught only by
+    # running the generated code against Redis and reading the keyspace back.
+    #
+    # A generator's tests prove its output is consistent with itself. Nothing but
+    # a real backend proves it is right.
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run the example against Redis
+        working-directory: examples
+        run: go run ./cmd/bookstore | tee /tmp/run.txt
+
+      # The program reports a cache hit and a fired invalidation edge by reading
+      # the store's load counter, so asserting on its output is asserting on the
+      # cache actually having served the read and the edge actually having
+      # dropped the entry.
+      - name: The cache served a hit and the edge fired
+        run: |
+          grep -q 'miss, loaded from store' /tmp/run.txt \
+            || (echo "::error::first read did not miss — Redis was not cold" && exit 1)
+          grep -q '10. read author.*(hit, store loads: 1)' /tmp/run.txt \
+            || (echo "::error::second read was not served from the cache" && exit 1)
+          grep -q 'the edge worked' /tmp/run.txt \
+            || (echo "::error::writing a Book did not invalidate the Author entry" && exit 1)
+          grep -q 'by isbn      -> 1 book(s)' /tmp/run.txt \
+            || (echo "::error::the secondary index returned nothing" && exit 1)
+
+      # The keyspace is the part no Go test can see. The scope value has to reach
+      # the key, because that is the whole of the tenancy boundary this generator
+      # refuses to emit without.
+      - name: The scope reached the keyspace
+        run: |
+          keys="$(redis-cli --scan --pattern 'bookstore:*' | sort)"
+          echo "$keys"
+          test -n "$keys" || (echo "::error::the run left no keys" && exit 1)
+          echo "$keys" | grep -q 'bookstore.v1.book.author.author-ursula' \
+            || (echo "::error::no key carries the scope value; the namespace is not isolating" && exit 1)
+          echo "$keys" | grep -q 'cache:idx:by:isbn:9780441013593' \
+            || (echo "::error::the isbn index set was never filed" && exit 1)
+
+      # The plugin generates the namespace and nothing below it. A key that does
+      # not carry the `cache:` segment core owns would mean generated code had
+      # started naming keys, which is the boundary the whole design rests on.
+      - name: The plugin wrote no key of its own
+        run: |
+          bad="$(redis-cli --scan --pattern 'bookstore:*' | grep -v ':cache:' || true)"
+          if [ -n "$bad" ]; then
+            echo "::error::key(s) outside the cache: keyspace core owns:"
+            echo "$bad"
+            exit 1
+          fi
+
+  reproduce:
+    name: Examples reproduce
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Both plugins, because the demonstration is that two of them agree without
+      # coordinating. protoc-gen-store emits the stores; protoc-gen-cache
+      # decorates them; nothing connects the runs but an import path.
+      - name: Install both plugins
+        run: |
+          go install "github.com/the-protobuf-project/store/plugin/cmd/protoc-gen-store@${STORE_VERSION}"
+          go install ./plugin/cmd/protoc-gen-cache
+
+      # The committed output is what a reader copies and what examples/ compiles
+      # against, so a change that alters it without updating it is a change to
+      # the documentation too.
+      - name: Committed examples are current
+        run: |
+          buf generate --template buf.gen.example.yaml
+          git diff --exit-code -- examples/generated/ \
+            || (echo "::error::examples/generated is stale — run: buf generate --template buf.gen.example.yaml, then commit" && exit 1)
+
+      # Generated output has to compile, and it is a separate module, so nothing
+      # above would have noticed.
+      - name: Generated output compiles
+        working-directory: examples
+        run: go build ./...
+
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -ldflags "-s -w" -o /dev/null ./plugin/cmd/protoc-gen-cache

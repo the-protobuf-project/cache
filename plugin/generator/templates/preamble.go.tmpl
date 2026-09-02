@@ -1,0 +1,178 @@
+{{ define "preamble" }}
+// This package is the *typed* path onto the cache runtime: one decorator per
+// cached resource, implementing the store interface protoc-gen-store generated,
+// so a caller narrows to the interface and stops caring which one it holds.
+//
+// There is a second path, and they are alternatives rather than layers. The
+// untyped one is runtime-go/database/cached.Wrap, which decorates a store.Driver
+// at the byte level and knows nothing about these types. Stacking both would put
+// two caches on one read: the decorator would hit, or miss and call a store whose
+// driver caches the same row again under a different key, and an invalidation
+// through one would leave the other serving what it just invalidated. Pick one.
+//
+// # What is not here
+//
+// Key strings. runtime-go/cache/core/keyspace.go owns key layout entirely. What
+// this file generates is the *namespace* the keyspace is built under — the value
+// handed to Provider.SetDatabase — and never a key inside it. Two keyspaces that
+// have to agree is one keyspace too many.
+//
+// Singleflight, negative caching, TTL enforcement, stale-while-revalidate and
+// index maintenance are all in core, and none of them is reimplemented here.
+
+// Invalidator is the one method an invalidation edge needs.
+//
+// cache.Aside satisfies it, and so does every decorator in this package, so
+// wiring an edge is passing one to the other rather than introducing a type
+// whose only purpose is to be passed.
+type Invalidator interface {
+	Invalidate(ctx context.Context, id string) error
+}
+
+// Edge is one declared invalidation relationship: a write to From makes To's
+// entries stale.
+//
+// The set below is data, not machinery. Nothing in this file reads it — each
+// edge is also a named field and a straight-line call, so the blast radius of a
+// write is visible where the write is. It is emitted because something else will
+// want it: a CDC consumer invalidating from the write-ahead log needs to know
+// which entries a row change reaches, and should not have to regenerate this
+// package to find out.
+type Edge struct {
+	// From and To are fully-qualified proto message names.
+	From, To string
+
+	// Via is the foreign-key column carrying the relationship.
+	Via string
+
+	// Reason is why the edge exists, in one line.
+	Reason string
+}
+
+// InvalidationEdges is every invalidation edge originating in the {{ .Schema }}
+// schema, sorted by (from, to, via).
+var InvalidationEdges = []Edge{
+{{- range .Edges }}
+	{
+		From:   {{ printf "%q" .From }},
+		To:     {{ printf "%q" .To }},
+		Via:    {{ printf "%q" .Via }},
+		Reason: {{ printf "%q" .Reason }},
+	},
+{{- end }}
+}
+
+// Option tunes a decorator at construction.
+type Option func(*options)
+
+type options struct {
+	notFound     func(error) bool
+	writeErrors  func(ctx context.Context, resource, op string, err error)
+	strictWrites bool
+}
+
+// WithNotFound teaches the decorators which store error means "this row does not
+// exist", so an absence can be cached.
+//
+// It has to be supplied because this package cannot ask. Negative caching —
+// remembering that something is missing, so a stream of requests for it stops
+// reaching the database — engages only when the loader returns an error wrapping
+// cache.ErrNotFound, and the generated store returns its driver's error
+// unchanged (gorm.ErrRecordNotFound). Translating that here would mean importing
+// the driver into generated cache code, which is the coupling this whole
+// arrangement exists to avoid.
+//
+// Without it everything still works: a missing row propagates its error to the
+// caller and nothing is cached. What you lose is the protection against a client
+// walking ids that do not exist, which is the case negative caching is for.
+//
+//	store, err := NewCachedAuthorStore(ctx, inner, db,
+//	    WithNotFound(func(err error) bool { return errors.Is(err, gorm.ErrRecordNotFound) }))
+func WithNotFound(fn func(error) bool) Option {
+	return func(o *options) { o.notFound = fn }
+}
+
+func newOptions(opts []Option) options {
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return o
+}
+
+// asNotFound translates a loader error into one the runtime will cache as an
+// absence, leaving every other error alone.
+func (o options) asNotFound(err error) error {
+	if err == nil || o.notFound == nil || !o.notFound(err) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", cache.ErrNotFound, err)
+}
+
+// WithWriteErrors observes cache failures that happen *after* a store write has
+// already committed — a refresh, a refile, an edge invalidation.
+//
+// By default those failures do not reach the caller (see afterWrite), which
+// means that without this option they are invisible. That is the trade: the
+// alternative default is worse, but silence is not free, and a cache whose
+// invalidations have been quietly failing for a week is a cache serving stale
+// reads nobody has a signal for. Wire this to a counter or a log line.
+//
+//	store, err := NewCachedAuthorStore(ctx, inner, db,
+//	    WithWriteErrors(func(ctx context.Context, resource, op string, err error) {
+//	        slog.ErrorContext(ctx, "cache write-side failure",
+//	            "resource", resource, "op", op, "err", err)
+//	    }))
+func WithWriteErrors(fn func(ctx context.Context, resource, op string, err error)) Option {
+	return func(o *options) { o.writeErrors = fn }
+}
+
+// WithStrictWrites makes a post-commit cache failure fail the write call.
+//
+// This is the opposite trade to the default, and it is the right one only when
+// serving a stale read is worse than a caller believing a write failed that did
+// not. Note what it cannot do: the row is already committed by the time anything
+// here runs, so this reports the failure, it does not undo it. A caller that
+// retries on the error will write twice.
+func WithStrictWrites() Option {
+	return func(o *options) { o.strictWrites = true }
+}
+
+// afterWrite decides what a committed write does about a cache error that
+// followed it.
+//
+// The default is to report it to the observer, if there is one, and otherwise
+// swallow it — and that default is the one deliberate asymmetry in this file, so
+// it is worth stating why rather than leaving it to be discovered.
+//
+// Everything routed through here runs *after* s.inner has already committed the
+// row. Returning the error to the caller therefore says "your write failed" about
+// a write that succeeded, and the ordinary response to that is a retry — which
+// creates a second row, or clobbers a concurrent update, for what was a blip in
+// a cache. The failure mode of swallowing is different in kind: an entry stays
+// stale until its TTL expires. Bounded, recoverable, and invisible only to
+// someone who did not wire WithWriteErrors.
+//
+// The bound is what makes the trade work, so mind the case that has none: a
+// resource with no (cache.v1.cache).ttl keeps entries until something invalidates
+// them, and a dropped invalidation there is not stale-for-a-minute but stale
+// until the next successful write. Each decorator's doc comment says whether its
+// resource has a TTL.
+//
+// WithStrictWrites restores the other behavior for callers who want it.
+func (o options) afterWrite(ctx context.Context, resource, op string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if o.writeErrors != nil {
+		o.writeErrors(ctx, resource, op, err)
+	}
+	if o.strictWrites {
+		return fmt.Errorf("cache: %s: %s failed after the store write had already committed: %w",
+			resource, op, err)
+	}
+	return nil
+}
+{{ end }}

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+// catalog.proto marks a field as a cache index on a resource whose strategy
+// maintains none.
+//
+// Left to generate, every accessor emitted for that index would report
+// ErrUnsupported on every backend — a mistake with a compile-time shape,
+// discovered at runtime.
+package catalog.v1;
+
+import "cache/v1/annotations.proto";
+import "entity/v1/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "CatalogProto";
+option java_package = "com.catalog.v1";
+option (entity.v1.datasource) = {database: "catalog_db"};
+
+// Product is ASIDE — read-through by id, with no secondary index anywhere.
+message Product {
+  option (google.api.resource) = {
+    type: "catalog.v1/Product"
+    pattern: "products/{product}"
+    singular: "product"
+    plural: "products"
+  };
+  option (cache.v1.cache) = {
+    enabled: true
+    strategy: STRATEGY_ASIDE
+  };
+
+  // name is the AIP resource name, demoted to a lookup column by the id strategy.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // ...and yet.
+  string sku = 2 [(cache.v1.cache_index) = {}];
+}

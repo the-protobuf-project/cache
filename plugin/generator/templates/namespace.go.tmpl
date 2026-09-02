@@ -1,0 +1,91 @@
+{{ define "namespace" }}
+{{- if .HasScope }}
+
+// {{ .ScopeType }} is the parent scope a {{ .Model }} decorator is bound to.
+//
+// A decorator is constructed per scope, not per process: the namespace — and so
+// every key under it — is parameterized by these values, which is what keeps one
+// parent's entries unreachable from another's.
+type {{ .ScopeType }} struct {
+{{- range .ScopeFields }}
+	// {{ .Doc }}
+	{{ .GoField }} string
+{{- end }}
+}
+
+// validate rejects a scope that cannot name a keyspace.
+//
+// An empty value would collapse two parents into one namespace, which is the
+// isolation failure this whole mechanism exists to prevent — silently, since the
+// resulting name is still a valid name. A ':' would let two differently-spelled
+// scopes address the same keys, for the reason core.CheckNamespace gives.
+func (s {{ .ScopeType }}) validate() error {
+{{- range .ScopeFields }}
+	if s.{{ .GoField }} == "" {
+		return errors.New("cache: {{ $.Node }}: scope field {{ .GoField }} is empty; " +
+			"an empty scope value collapses every parent into one namespace, which removes the " +
+			"isolation the {{ .Segment }} segment exists to provide")
+	}
+	if strings.Contains(s.{{ .GoField }}, ":") {
+		return fmt.Errorf("cache: scope field {{ .GoField }} = %q contains ':', which the cache "+
+			"keyspace uses to join the prefix to the namespace — two scopes spelled differently "+
+			"would address the same keys", s.{{ .GoField }})
+	}
+{{- end }}
+	return nil
+}
+{{- else }}
+
+// {{ .NamespaceConst }} is the fixed namespace for {{ .Model }}: its pattern has
+// no parent segment and no field is forced into scope, so nothing parameterizes it.
+const {{ .NamespaceConst }} = {{ .NamespaceLiteral }}
+{{- end }}
+
+// {{ .NamespaceFunc }} returns the namespace {{ .Model }}'s keyspace is built under.
+//
+// This is the value to pass to Provider.SetDatabase. It is the whole of what this
+// generator emits about key layout: core owns everything below it.
+func {{ .NamespaceFunc }}({{ .NamespaceArgs }}) string {
+{{- if .HasScope }}
+	return strings.Join([]string{
+{{- range .NamespaceExpr }}
+		{{ . }},
+{{- end }}
+	}, ".")
+{{- else }}
+	return {{ .NamespaceConst }}
+{{- end }}
+}
+
+// Open{{ .Model }}Cache selects the cache database {{ .Model }}'s decorator expects.
+//
+// It exists so the namespace is never spelled twice. Calling SetDatabase by hand
+// with a name assembled elsewhere is the one way to get a decorator whose keys do
+// not match its scope, and assertNamespace would then refuse it — correctly, but
+// after the fact.
+func Open{{ .Model }}Cache(ctx context.Context, p cache.Provider{{ if .HasScope }}, scope {{ .ScopeType }}{{ end }}) (*cache.DB, error) {
+{{- if .HasScope }}
+	if err := scope.validate(); err != nil {
+		return nil, err
+	}
+{{- end }}
+	return p.SetDatabase(ctx, {{ .NamespaceFunc }}({{ .NamespaceCall }}))
+}
+{{- if .HasEdges }}
+
+// {{ .EdgesType }} wires the invalidation edges a write to {{ .Model }} fires.
+//
+// Each field is a resource whose cached entries a {{ .Model }} write makes stale.
+// They are explicit fields rather than a registry the decorator consults because
+// the blast radius of a write should be visible at the wiring site — a nil field
+// is a decision not to invalidate, made in the open.
+type {{ .EdgesType }} struct {
+{{- range .EdgeWires }}
+	// {{ .Field }}: {{ .Doc }}
+	// Nil skips it.
+	{{ .Field }} Invalidator
+{{- end }}
+}
+{{- end }}
+
+{{ end }}

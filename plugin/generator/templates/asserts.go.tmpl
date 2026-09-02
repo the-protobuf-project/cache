@@ -1,0 +1,83 @@
+{{ define "asserts" }}
+// assertNamespace is what makes a generated namespace a guarantee rather than a
+// suggestion.
+//
+// A *cache.DB arrives already bound to whatever namespace the caller selected it
+// under, and nothing in the type says which. If it is not the one this resource's
+// keys were derived for, every read and write in this decorator addresses a
+// keyspace the generator never reasoned about — which for a scoped resource means
+// the isolation it exists to provide is simply absent. cache.DB.Name is the only
+// handle on that, so it is checked here, once, before a decorator exists at all.
+func assertNamespace(db *cache.DB, want, resource string) error {
+	if db.Name == want {
+		return nil
+	}
+	if db.Name == "" {
+		return fmt.Errorf("cache: %s: this cache database was selected by index, not by name, "+
+			"so it carries no namespace and the one this decorator's keys are derived for (%q) "+
+			"cannot be enforced.\n\nSelect it with Provider.SetDatabase(ctx, %s) instead of "+
+			"SelectIndex", resource, want, namespaceFuncName(resource))
+	}
+	return fmt.Errorf("cache: %s: this cache database is namespaced %q, but this decorator's keys "+
+		"are derived under %q.\n\nEvery read and write would address a keyspace other than the one "+
+		"generated for this resource. Select the database with Provider.SetDatabase(ctx, %s)",
+		resource, db.Name, want, namespaceFuncName(resource))
+}
+
+// namespaceFuncName names the generated helper in an error message, so the fix
+// is spelled out rather than described.
+func namespaceFuncName(resource string) string {
+	if i := strings.LastIndex(resource, "."); i >= 0 {
+		return resource[i+1:] + "Namespace(...)"
+	}
+	return "the resource's Namespace function"
+}
+{{ if .NeedsSets }}
+// assertSets fails construction when the driver behind db has no server-side
+// sets.
+//
+// The strategies that need them do not degrade without them — core refuses, per
+// operation, with ErrUnsupported — so a decorator built on a setless backend is
+// one whose index accessors all fail at runtime, on a code path a test with a
+// real Redis will never reach. Better to refuse at startup, naming the resource
+// and the capability, than to hand back something that compiles and cannot work.
+//
+// It probes rather than asks because there is nothing to ask. core resolves a
+// driver's capabilities once, at construction, and keeps them private; *cache.DB
+// exposes the four strategies and no report of what is behind them. IDsByIndex on
+// an empty value is the cheapest question that has the answer in it: a driver with
+// no sets refuses before touching the network, and one with sets answers with an
+// empty result.
+func assertSets(ctx context.Context, db *cache.DB, resource, strategy, probe string) error {
+	if _, err := db.Indexed.IDsByIndex(ctx, probe, ""); errors.Is(err, cache.ErrUnsupported) {
+		return fmt.Errorf("cache: %s is configured as %s, which requires core.Sets, and the %s "+
+			"backend behind this cache database does not implement it: %w\n\n"+
+			"A backend with no server-side sets cannot maintain a secondary index or enumerate "+
+			"entries. Either move this resource to STRATEGY_ASIDE or STRATEGY_VOLATILE, or wire "+
+			"it to a backend with sets (redis, dragonfly).",
+			resource, strategy, db.Backend, err)
+	}
+	return nil
+}
+{{ end }}
+{{- if .NeedsLeases }}
+// assertLeases fails construction when the driver cannot report a remaining TTL.
+//
+// A stale window is served by reading how much of an entry's lease is left.
+// Memcache stores an expiry and honors it but will never say what remains, so a
+// resource configured with (cache.v1.cache).stale cannot behave as configured
+// there — it would silently fall back to blocking every reader at the moment the
+// key expires, which is precisely the traffic spike stale exists to absorb.
+func assertLeases(ctx context.Context, db *cache.DB, resource string) error {
+	if _, err := db.Volatile.TTL(ctx, "__cache_capability_probe"); errors.Is(err, cache.ErrUnsupported) {
+		return fmt.Errorf("cache: %s sets (cache.v1.cache).stale, which requires core.Leases, and "+
+			"the %s backend behind this cache database does not implement it: %w\n\n"+
+			"Serving an entry past its lease means reading what is left of that lease, and this "+
+			"backend's protocol never reports one. Either drop stale for this resource or wire it "+
+			"to a backend with leases (redis, dragonfly).",
+			resource, db.Backend, err)
+	}
+	return nil
+}
+{{ end }}
+{{ end }}
