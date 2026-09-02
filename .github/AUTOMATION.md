@@ -100,10 +100,14 @@ sail through.
 All of them, including majors, gated on CI. Two dependencies are worth knowing
 about specifically:
 
-- **`protokit`** is the IR engine, and a major bump of it is the change most
-  likely to alter *generated output* rather than break the build. What stands
-  between that and a silent change to every consumer's cache is the golden and
-  agreement tests.
+- **`protokit`** is the IR engine, and a bump of it — at *any* update type — is
+  the change most likely to alter *generated output* rather than break the build.
+  It is therefore excluded from the grouped pull request and always arrives on its
+  own. What stands between it and a silent change to every consumer's cache is the
+  golden and agreement tests, plus `Examples reproduce`, which is the only check
+  that runs both plugins as the separate binaries a user installs — and so the
+  only one that can see the two of them land on different engine versions. See
+  docs/boundary-findings.md, finding 10.
 - **`runtime-go/cache`** is what the *generated* code calls. A bump there can
   change what a decorator writes to a real backend without changing a byte of
   this repository's output, and `Integration (Redis)` is the only job that would
