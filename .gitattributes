@@ -1,8 +1,9 @@
 # Language detection on GitHub.
 *.proto linguist-detectable=true
 
-# --- line endings ---
-#
+# Map custom extension to Protocol Buffer
+*.protobuf linguist-language=Protocol Buffer
+
 # Everything below is compared byte-for-byte by the test suite, so git must not
 # rewrite it on checkout. Without these, git's default core.autocrlf=true on
 # Windows turns every committed LF into CRLF and the comparison fails on the line
