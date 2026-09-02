@@ -41,10 +41,8 @@ archives:
       {{- else if eq .Arch "arm64" }}arm64
       {{- else }}{{ .Arch }}{{ end }}
     files:
+      - LICENSE
       - README.md
-      # LICENSE is deliberately absent: this repository has none yet. Add the
-      # file and add it back to this list — an archive that ships code with no
-      # license terms is worse than one that ships an extra file.
     format_overrides:
       - goos: windows
         formats: [zip]

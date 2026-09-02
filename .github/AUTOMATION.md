@@ -143,9 +143,12 @@ Set under Settings → Secrets and variables → Actions:
 must export it under exactly that name; a token exported as anything else leaves
 the push unauthenticated.
 
-## Before the first release
+## Licensing
 
-- **Add a `LICENSE`.** There is none, and `.github/release/goreleaser.yaml`
-  therefore omits it from the archive. Add the file and add it back to the
-  `files:` list — an archive that ships code with no license terms is worse than
-  one that ships an extra file.
+Apache-2.0, matching every other repository in the organization. `LICENSE` is
+shipped inside each release archive by `.github/release/goreleaser.yaml`.
+
+There are no per-file license headers, which is the convention the sibling
+repositories follow too: the LICENSE file covers the work, and a header on every
+generated and hand-written file would be noise in a codebase whose comments are
+already doing real work.

@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
   <a href="https://github.com/the-protobuf-project/cache/actions/workflows/test.yaml"><img src="https://github.com/the-protobuf-project/cache/actions/workflows/test.yaml/badge.svg" alt="Test"></a>
   <a href="https://github.com/the-protobuf-project/cache/actions/workflows/lint.yaml"><img src="https://github.com/the-protobuf-project/cache/actions/workflows/lint.yaml/badge.svg" alt="Lint"></a>
   <a href="https://pkg.go.dev/github.com/the-protobuf-project/cache"><img src="https://pkg.go.dev/badge/github.com/the-protobuf-project/cache.svg" alt="Go Reference"></a>
@@ -622,9 +623,8 @@ with itself; nothing but a real backend proves it is right.
 
 Tagging `v*` runs GoReleaser and `buf push`. Dependabot pull requests merge
 themselves once every check passes — see
-[.github/AUTOMATION.md](.github/AUTOMATION.md) for how that gate works, why it
-does not use GitHub's native auto-merge, and what still has to be added before the
-first release.
+[.github/AUTOMATION.md](.github/AUTOMATION.md) for how that gate works and why it
+does not use GitHub's native auto-merge.
 
 Both the vocabulary and the examples pass
 [api-linter](https://github.com/googleapis/api-linter) with one suppression, in
@@ -634,8 +634,7 @@ payload rather than a resource.
 
 ## License
 
-Not yet chosen — see [.github/AUTOMATION.md](.github/AUTOMATION.md). A `LICENSE`
-has to land before the first release.
+[Apache-2.0](LICENSE), matching every other repository in the organization.
 
 [protoc-gen-store]: https://github.com/the-protobuf-project/store
 [protokit]: https://github.com/the-protobuf-project/protokit
