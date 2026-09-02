@@ -49,6 +49,14 @@ jobs:
         with:
           version: latest
 
+      # examples/ is a module of its own, and golangci-lint does not cross a
+      # module boundary — the invocation above never sees it. It holds the
+      # runnable program and the two test doubles, which is real code.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          working-directory: examples
+
   proto:
     name: Lint (Proto)
     runs-on: ubuntu-latest

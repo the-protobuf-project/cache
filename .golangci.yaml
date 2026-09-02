@@ -19,6 +19,32 @@ linters:
         - fmt.Fprintf
         - fmt.Fprintln
 
+  exclusions:
+    rules:
+      # ST1005 — "error strings should not end with punctuation or newlines" —
+      # is right about Go errors and wrong about this package.
+      #
+      # The convention exists because errors compose: `fmt.Errorf("reading
+      # config: %w", err)` reads badly when the wrapped error ends mid-sentence
+      # with a full stop. That is the shape of almost every error in almost every
+      # package, and the rule stays on everywhere else here.
+      #
+      # plugin/spec is the exception by design rather than by accident. Its
+      # doc.go states the arrangement: "Everything that can fail, fails here."
+      # Every error it returns is a *refusal* addressed to whoever wrote the
+      # proto — several sentences, a blank line, an explanation of the
+      # consequence, and the annotation that fixes it, rendered straight to a
+      # terminal by protoc. Nothing wraps them. Stripping the final full stop
+      # from a four-sentence paragraph does not make it compose better; it makes
+      # it look truncated.
+      #
+      # Scoped to this package, and to this one check, so a stray period on an
+      # ordinary single-clause error anywhere else still gets caught.
+      - path: 'plugin/spec/'
+        linters:
+          - staticcheck
+        text: 'ST1005'
+
 issues:
   # Report everything rather than the default first-3-per-linter, so one run
   # shows the whole list instead of revealing it a few at a time.

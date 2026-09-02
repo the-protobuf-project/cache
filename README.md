@@ -577,7 +577,8 @@ Everything resolves from the module proxy — no workspace required, as of
 buf lint && buf format --diff --exit-code && buf build
 go build ./... && go vet ./... && go test ./...
 (cd examples && go build ./... && go vet ./... && go test ./...)
-./scripts/aip.sh                       # AIP lint, no config and no disabled rule
+golangci-lint run && (cd examples && golangci-lint run)   # both modules: it does not cross one
+./scripts/aip.sh                       # AIP lint, no config and one suppression
 
 # end to end: both plugins over one set of protos, then compile the result
 go install github.com/the-protobuf-project/store/plugin/cmd/protoc-gen-store@v1.5.1
