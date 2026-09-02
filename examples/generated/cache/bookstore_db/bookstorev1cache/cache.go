@@ -8,7 +8,7 @@
 // schema:   bookstore_v1
 //
 // annotations: entity.v1 v1.5.1, cache.v1 dev
-// engine:      protokit v1.2.1
+// engine:      protokit v1.3.1
 // runtime:     github.com/the-protobuf-project/runtime-go/cache
 //
 // cache — https://github.com/the-protobuf-project/cache

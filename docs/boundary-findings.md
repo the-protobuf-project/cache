@@ -409,6 +409,71 @@ runs the example against a Redis service container for exactly this reason.
 
 ---
 
+## 10. The agreement test cannot see a version skew between the two binaries
+
+**Where:** `plugin/generator/agreement_test.go`, and Go's module resolution
+
+`TestIRAgreement` is the acceptance test this whole plugin exists to satisfy: it
+runs protoc-gen-store and protoc-gen-cache over the same protos and requires them
+to derive identical neutral names. It does that by importing store's plugin
+*source* and instantiating it in the same test binary.
+
+That construction is what gives the test its strength — it compares against the
+real plugin rather than a stand-in — and it is also its blind spot. One Go binary
+has one version of any dependency. So when the test links store's code and this
+plugin's code together, MVS picks a single protokit for both, and the test proves
+*"these two agree when run on one engine"*. It cannot prove anything about two
+plugins on **different** engines, because it has no way to build that.
+
+Different engines is not hypothetical. It is the ordinary case:
+
+```
+protoc-gen-store@v1.5.1   →  protokit v1.2.1   (its go.mod)
+protoc-gen-cache@HEAD     →  protokit v1.3.1   (after a Dependabot bump)
+```
+
+Two binaries, invoked by one `buf generate`, deriving names through two versions
+of the engine that decides names. Nothing in the test suite is positioned to
+notice, and `go.mod`'s note that protokit is "pinned, not floated" describes an
+intention that a dependency bot does not read.
+
+**What caught it was the banner.** The `Examples reproduce` job regenerates the
+committed tree with both real binaries and diffs it, and the diff was one line:
+
+```
+-// engine:      protokit v1.2.1
++// engine:      protokit v1.3.1
+```
+
+The provenance line exists to answer "why did this file change?", and the answer
+it gave was one no test could have given: the two halves of the committed output
+are now produced by different engine versions. The gorm half still says v1.2.1;
+the cache half says v1.3.1, and both are telling the truth.
+
+**No divergence this time.** Regenerating with both binaries changed that single
+banner line and nothing else — v1.3.1 derives the same database, schema, table and
+column names as v1.2.1 for these schemas, and the goldens, determinism and
+agreement tests all pass on the new engine. The bump was safe. But it was safe by
+inspection after the fact, not by anything that would have blocked it.
+
+**Not worked around.** A test that spawned both plugins as subprocesses, each
+built at its own pinned engine version, would close the gap — and it is most of a
+package-manager away from what a Go test can reasonably do. The cheaper mitigation
+is the one already in place and worth naming as load-bearing rather than
+decorative: **`Examples reproduce` is the only check that runs the two plugins as
+the two binaries a user actually installs**, and the banner is what makes a skew
+between them visible. Neither is a nice-to-have.
+
+**Upstream fix:** the honest one is for the ecosystem's plugins to move protokit
+in step, and for a release of one to state the engine it was built against
+somewhere a scheduler can read — `plugin.yaml` already declares `requires:` and is
+the natural home for it. Failing that, a `protokit` major bump should be treated
+as a breaking change for every plugin downstream of it, and Dependabot's
+`go-minor-and-patch` group should exclude it so it always arrives as its own pull
+request. See the note on update types in `.github/AUTOMATION.md`.
+
+---
+
 ## What did *not* need working around
 
 Worth recording, because the parts that held are the design working:
