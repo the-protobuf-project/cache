@@ -580,9 +580,13 @@ go build ./... && go vet ./... && go test ./...
 golangci-lint run && (cd examples && golangci-lint run)   # both modules: it does not cross one
 ./scripts/aip.sh                       # AIP lint, no config and one suppression
 
-# end to end: both plugins over one set of protos, then compile the result
+# end to end: both plugins over one set of protos, then compile the result.
+# The version pin is required, not cosmetic: it lands in the generated banner,
+# and an unpinned build reports whatever Go derives from the checkout — a
+# pseudo-version at a clean commit, "(devel)" on a dirty tree — so the committed
+# examples would never reproduce. CI pins the same value.
 go install github.com/the-protobuf-project/store/plugin/cmd/protoc-gen-store@v1.5.1
-go install ./plugin/cmd/protoc-gen-cache
+go install -ldflags "-X main.version=dev" ./plugin/cmd/protoc-gen-cache
 buf generate --template buf.gen.example.yaml
 ```
 

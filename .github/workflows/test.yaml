@@ -19,6 +19,10 @@ env:
   # depend on the compiler that produced them, and buf-setup-action's default
   # trails well behind. Keep this in step with the buf a contributor runs.
   BUF_VERSION: 1.72.0
+  # The version stamped into examples/generated's banners. "dev" is what an
+  # unreleased build reports, so this is the value the committed tree carries and
+  # the value a contributor regenerating locally will produce.
+  CACHE_VERSION: dev
 
 jobs:
   test:
@@ -144,6 +148,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The service container answers on localhost:6379, which is all the example
+      # program needs — but the keyspace assertions below run on the *runner*,
+      # and ubuntu-latest ships no redis-cli. Reading the keys back is the whole
+      # reason this job exists, so the client is not optional dressing.
+      - name: Install redis-cli
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+
       - name: Run the example against Redis
         working-directory: examples
         run: go run ./cmd/bookstore | tee /tmp/run.txt
@@ -210,10 +221,16 @@ jobs:
       # Both plugins, because the demonstration is that two of them agree without
       # coordinating. protoc-gen-store emits the stores; protoc-gen-cache
       # decorates them; nothing connects the runs but an import path.
+      # Both plugins at a pinned version, and the pin is load-bearing on both
+      # sides. protoc-gen-store's banner lands in the gorm output; this plugin's
+      # lands in the cache output. An unpinned protoc-gen-cache reports whatever
+      # Go derives from the checkout — a pseudo-version at a clean commit,
+      # "(devel)" on a dirty tree — so the committed banner could never match and
+      # this job would fail on every push. See resolveVersion in main.go.
       - name: Install both plugins
         run: |
           go install "github.com/the-protobuf-project/store/plugin/cmd/protoc-gen-store@${STORE_VERSION}"
-          go install ./plugin/cmd/protoc-gen-cache
+          go install -ldflags "-X main.version=${CACHE_VERSION}" ./plugin/cmd/protoc-gen-cache
 
       # The committed output is what a reader copies and what examples/ compiles
       # against, so a change that alters it without updating it is a change to
