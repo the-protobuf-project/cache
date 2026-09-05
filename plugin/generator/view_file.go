@@ -59,11 +59,16 @@ func stdImports(f fileView) []string {
 		"context": true, // every constructor and method takes one
 		"errors":  true, // nil-argument refusals, and errors.Is on ErrUnsupported
 		"fmt":     true, // every assertion message
+		// namespaceFuncName is emitted unconditionally by the assertion helpers
+		// and calls strings.LastIndex, so this cannot be gated on HasScope the
+		// way namespace assembly could: a file whose resources are all unscoped
+		// still renders the call and would not compile without the import. The
+		// doc comment above anticipated the unused-import direction; this is the
+		// missing-import one, and no golden covered it because the only fixture
+		// with a cached resource scopes it.
+		"strings": true,
 	}
 	for _, r := range f.Resources {
-		if r.HasScope {
-			need["strings"] = true // namespace assembly and the ':' check
-		}
 		if len(r.AsideOptions) > 0 {
 			need["time"] = true
 		}
