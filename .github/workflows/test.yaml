@@ -14,7 +14,7 @@ env:
   # than @latest for the reason golden tests exist at all: protoc-gen-store's
   # output is the input to protoc-gen-cache's, so a floating store would make the
   # "committed examples are current" job fail on someone else's release.
-  STORE_VERSION: v1.5.1
+  STORE_VERSION: v1.5.7
   # Pinned for the same reason buffers pins it: a FileDescriptorSet's bytes
   # depend on the compiler that produced them, and buf-setup-action's default
   # trails well behind. Keep this in step with the buf a contributor runs.
