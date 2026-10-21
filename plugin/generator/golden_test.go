@@ -24,6 +24,17 @@ import (
 // golden was produced against.
 const storeModule = "github.com/the-protobuf-project/cache/examples/generated/gorm"
 
+// repositoryModule is where the golden list caches import protoc-gen-store's
+// repository output from. The example generates none, so the path is only
+// rendered, never compiled; freebusy compiles and runs the real thing.
+const repositoryModule = "example.com/generated/repository"
+
+// goldenGoPackage is the Go import path the golden harness gives every case's
+// protos.
+const goldenGoPackage = "example.com/test/gen"
+
+var testModules = generator.Modules{Store: storeModule, Repository: repositoryModule}
+
 // TestMain sets the tool identity the banner names. The plugin binary does this
 // at startup; without it here, every golden would be written by
 // "protoc-gen-protokit" and a real run would then disagree with them.
@@ -44,7 +55,7 @@ var testVersions = generator.Versions{Plugin: "test", Entity: "test", Engine: "t
 
 // casePlugin builds the plugin for a golden case.
 func casePlugin(string) protokit.Plugin {
-	return generator.Plugin(storeModule, testVersions, nil)
+	return generator.Plugin(testModules, testVersions, nil)
 }
 
 // TestGolden compares each case's output against its committed tree.
@@ -90,8 +101,18 @@ func TestDeterminism(t *testing.T) {
 func TestGeneratedOutputImports(t *testing.T) {
 	allowed := map[string]bool{
 		"github.com/the-protobuf-project/runtime-go/cache": true,
+		// A list cache stores pages of the messages its repository returns,
+		// in their wire encoding.
+		"google.golang.org/protobuf/proto": true,
+		// The messages' own Go package, as the golden harness maps every
+		// case's protos.
+		goldenGoPackage: true,
 	}
 	const storePrefix = storeModule + "/"
+	// A list cache wraps the repository interface, so it imports that tree
+	// (the per-schema package and repox) the way a record decorator imports
+	// the store's.
+	const repositoryPrefix = repositoryModule + "/"
 
 	for _, dir := range cases(t, "cases") {
 		goldenDir := filepath.Join(dir, "golden", generator.TargetName)
@@ -107,16 +128,17 @@ func TestGeneratedOutputImports(t *testing.T) {
 						continue // no dot in the first segment: stdlib
 					case allowed[imp]:
 						continue
-					case strings.HasPrefix(imp, storePrefix):
+					case strings.HasPrefix(imp, storePrefix), strings.HasPrefix(imp, repositoryPrefix):
 						continue
 					}
 					t.Errorf("%s imports %q.\n\n"+
-						"Generated cache output may import only the store's generated tree (%s...), "+
-						"runtime-go/cache, and the standard library. Anything else becomes a "+
+						"Generated cache output may import only the store's and the repositories' "+
+						"generated trees (%s..., %s...), the messages' own package, "+
+						"runtime-go/cache, protobuf's proto, and the standard library. Anything else becomes a "+
 						"dependency of every consumer of the generated package — and if it is "+
 						"runtime-go/cache/core, it also means generated code can name a key, which "+
 						"core owns outright.",
-						mustRel(t, path), imp, storePrefix)
+						mustRel(t, path), imp, storePrefix, repositoryPrefix)
 				}
 			}
 		})

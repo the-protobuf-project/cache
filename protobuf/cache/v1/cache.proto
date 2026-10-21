@@ -59,6 +59,37 @@ message CacheOptions {
   // the runtime's keyspace, so allowing one would let two configurations that
   // were never meant to meet address the same keys.
   string namespace = 6;
+
+  // list caches this resource's List pages. It is independent of enabled:
+  // enabled caches records read one at a time, this caches the pages a List
+  // returns, and a resource may want either, both or neither.
+  ListCacheOptions list = 7;
+}
+
+// ListCacheOptions configures the cache of a resource's List pages.
+//
+// A page is a different thing to cache than a record. It is keyed by
+// everything the List was asked -- the parent, the filter, the order, the page
+// size and token -- and any write under the parent can change it: a new record
+// appears on some page, an update moves one across a filter or an order, a
+// delete shifts every page after it. Working out which pages one write reached
+// is not possible in general, so nothing tries. Each parent instead carries a
+// version, every page is cached under its parent's version, and a write to a
+// record replaces its parent's version with a new one. Pages filed under the
+// old version are never read again and expire on their own.
+//
+// A write is seen through the generated repositories (repox.Conn.Changes), so
+// a write that bypasses them -- SQL by hand, another service writing the same
+// table, a GraphQL mutation sent straight to the engine -- is seen by nothing,
+// and the pages it made stale are served until ttl ends. ttl is that bound.
+message ListCacheOptions {
+  // enabled turns list caching on for this resource.
+  bool enabled = 1;
+
+  // ttl is how long a page may be served. Required, here or as the file's
+  // default ttl: it is the only bound on a page made stale by a write the
+  // repositories never saw.
+  google.protobuf.Duration ttl = 2;
 }
 
 // CacheDefaults is the file-level (cache.v1.cache_defaults) annotation: the

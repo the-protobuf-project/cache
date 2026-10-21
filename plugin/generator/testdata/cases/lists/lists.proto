@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+// lists.proto covers (cache.v1.cache).list: a top-level resource that caches
+// only its List pages, under the file's default ttl, and a nested one that
+// caches both its records and its pages, so the two outputs share a package.
+package shelving.v1;
+
+import "cache/v1/annotations.proto";
+import "entity/v1/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+
+option go_package = "example.com/shelving/v1;shelvingpbv1";
+option java_multiple_files = true;
+option java_outer_classname = "ListsProto";
+option java_package = "com.shelving.v1";
+option (cache.v1.cache_defaults) = {
+  ttl: {seconds: 90}
+};
+option (entity.v1.datasource) = {
+  database: "shelving_db"
+  schema: "shelving"
+};
+
+// Shelf is listed often and read one at a time rarely: only its pages are
+// cached.
+message Shelf {
+  option (google.api.resource) = {
+    type: "shelving.v1/Shelf"
+    pattern: "shelves/{shelf}"
+    singular: "shelf"
+    plural: "shelves"
+  };
+  option (entity.v1.table) = {id: ID_STRATEGY_ULID};
+  option (cache.v1.cache) = {
+    list: {enabled: true}
+  };
+
+  // name is the AIP resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+}
+
+// Note caches its records and its pages.
+message Note {
+  option (google.api.resource) = {
+    type: "shelving.v1/Note"
+    pattern: "shelves/{shelf}/notes/{note}"
+    singular: "note"
+    plural: "notes"
+  };
+  option (entity.v1.table) = {id: ID_STRATEGY_ULID};
+  option (cache.v1.cache) = {
+    enabled: true
+    namespace: "shelving.v1.note.{shelf}"
+    list: {
+      enabled: true
+      ttl: {seconds: 30}
+    }
+  };
+
+  // name is the AIP resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+}

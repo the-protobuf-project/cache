@@ -65,6 +65,15 @@ func TestGenerationRefusals(t *testing.T) {
 			},
 		},
 		{
+			dir: "list_without_ttl",
+			why: "a list cache with no ttl, here or as the file default",
+			wants: []string{
+				"feed.v1.Post",
+				"no ttl",
+				"(cache.v1.cache).list.ttl",
+			},
+		},
+		{
 			dir: "index_non_string",
 			why: "a cache_index field on a non-string column",
 			wants: []string{
@@ -138,6 +147,11 @@ func goldenFile(t *testing.T, caseName, rel string) string {
 // generate runs the real plugin entry point over a case and returns its error.
 func generate(t *testing.T, dir string) error {
 	t.Helper()
+	return generateWith(t, dir, testModules)
+}
+
+func generateWith(t *testing.T, dir string, mods generator.Modules) error {
+	t.Helper()
 	req := golden.BuildRequest(t, dir)
 	p, err := protogen.Options{}.New(req)
 	if err != nil {
@@ -145,5 +159,15 @@ func generate(t *testing.T, dir string) error {
 	}
 	return protokit.RunPlugin(p,
 		protokit.Options{Target: generator.TargetName},
-		generator.Plugin(storeModule, testVersions, nil))
+		generator.Plugin(mods, testVersions, nil))
+}
+
+// A list cache wraps the repository interface, so a run that caches a list
+// without saying where the repositories are is refused -- naming the opt --
+// rather than rendering an import of nothing.
+func TestListNeedsRepositoryModule(t *testing.T) {
+	err := generateWith(t, filepath.Join("testdata", "cases", "lists"), generator.Modules{Store: storeModule})
+	if err == nil || !strings.Contains(err.Error(), "repository_module") {
+		t.Fatalf("got %v, want a refusal naming the repository_module opt", err)
+	}
 }

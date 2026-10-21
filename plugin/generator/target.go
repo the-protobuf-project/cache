@@ -57,15 +57,20 @@ type Target struct {
 	// which is why generation fails rather than guessing when it is unset.
 	StoreModule string
 
+	// RepositoryModule is the Go import path of protoc-gen-store's repository
+	// output. Only a list cache needs it, so it is checked only when some
+	// resource caches its list.
+	RepositoryModule string
+
 	// Versions are the module versions stamped into every banner. They are
 	// supplied rather than resolved here so that rendering is a pure function of
 	// its inputs — see provenance.go for what reading them at render time cost.
 	Versions Versions
 }
 
-// New returns a target rendering against the store output at storeModule.
-func New(storeModule string, versions Versions) *Target {
-	return &Target{StoreModule: storeModule, Versions: versions}
+// New returns a target rendering against the protoc-gen-store outputs at mods.
+func New(mods Modules, versions Versions) *Target {
+	return &Target{StoreModule: mods.Store, RepositoryModule: mods.Repository, Versions: versions}
 }
 
 // Name is the value of the buf.gen.yaml `target` opt this target answers to.
@@ -93,10 +98,21 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 		return err
 	}
 
+	var msgs map[string]goMessage
 	for _, db := range sp.Databases {
 		for _, s := range db.Schemas {
-			if err := t.renderSchema(p, ir, db, s); err != nil {
-				return err
+			if len(s.Resources) > 0 {
+				if err := t.renderSchema(p, ir, db, s); err != nil {
+					return err
+				}
+			}
+			if len(s.Lists) > 0 {
+				if msgs == nil {
+					msgs = messagesByName(p)
+				}
+				if err := t.renderLists(p, ir, db, s, msgs); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -134,6 +150,70 @@ func (t *Target) renderSchema(p *protogen.Plugin, ir *protokit.IR, db *spec.Data
 		return fmt.Errorf("cache: write %s: %w", rel, err)
 	}
 	return nil
+}
+
+// renderLists writes one schema's list.go: the list caches over its
+// repositories.
+func (t *Target) renderLists(p *protogen.Plugin, ir *protokit.IR, db *spec.Database, s *spec.Schema, msgs map[string]goMessage) error {
+	if t.RepositoryModule == "" {
+		return fmt.Errorf("cache: %s caches its list, which needs the repository_module opt: the Go "+
+			"import path of protoc-gen-store's repository output (e.g. "+
+			"repository_module=github.com/me/gen/repository). A list cache wraps the generated "+
+			"<Model>Repository, so it serves both the GORM and the GraphQL backend, and it cannot "+
+			"name that interface without it", s.Lists[0].Node)
+	}
+	banner := Render("//", header.Info{
+		ProtocVersion: protocVersion(p),
+		Source:        SourceLine(sourceProtos(ir, db.Name, s.Name)),
+		Database:      db.Name,
+		Schema:        s.Name,
+	}, t.Versions)
+
+	f, err := buildListFile(banner, t.RepositoryModule, db.Name, s, msgs)
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "list.go.tmpl", f); err != nil {
+		return fmt.Errorf("cache: render %s/%s list.go: %w", db.Name, s.GoPackage, err)
+	}
+	src, err := format.Source(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("cache: %s/%s: generated list.go does not parse: %w\n\n%s",
+			db.Name, s.GoPackage, err, buf.String())
+	}
+	rel := path.Join(db.Name, s.GoPackage, "list.go")
+	if _, err := p.NewGeneratedFile(rel, "").Write(src); err != nil {
+		return fmt.Errorf("cache: write %s: %w", rel, err)
+	}
+	return nil
+}
+
+// goMessage is a proto message's generated Go type: its name, and the import
+// path and declared name of its package.
+type goMessage struct {
+	Name, ImportPath, Package string
+}
+
+// messagesByName indexes every message in the request by its full name, so a
+// list cache can name the Go type its repository returns.
+func messagesByName(p *protogen.Plugin) map[string]goMessage {
+	out := map[string]goMessage{}
+	for _, f := range p.Files {
+		var walk func([]*protogen.Message)
+		walk = func(ms []*protogen.Message) {
+			for _, m := range ms {
+				out[string(m.Desc.FullName())] = goMessage{
+					Name:       m.GoIdent.GoName,
+					ImportPath: string(f.GoImportPath),
+					Package:    string(f.GoPackageName),
+				}
+				walk(m.Messages)
+			}
+		}
+		walk(f.Messages)
+	}
+	return out
 }
 
 // sourceProtos returns the distinct proto import paths contributing tables to a

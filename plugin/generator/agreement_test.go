@@ -102,7 +102,7 @@ func assertNonVacuous(t *testing.T, dir string) {
 
 // cachePlugin is this plugin, configured as a real run would be.
 func cachePlugin() protokit.Plugin {
-	return generator.Plugin(storeModule, testVersions, nil)
+	return generator.Plugin(testModules, testVersions, nil)
 }
 
 // storePlugin is protoc-gen-store, with its full reader set: entity.v1, its

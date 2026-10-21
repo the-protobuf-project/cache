@@ -51,6 +51,7 @@ func Build(ir *protokit.IR) (*Spec, error) {
 // none.
 func buildSchema(ir *protokit.IR, s *schema.Schema) (*Schema, error) {
 	var resources []*Resource
+	var lists []*ListResource
 	tables := map[schema.NodeID]*schema.Table{}
 	for _, t := range s.Tables {
 		if t.Node != "" {
@@ -63,11 +64,19 @@ func buildSchema(ir *protokit.IR, s *schema.Schema) (*Schema, error) {
 		if r != nil {
 			resources = append(resources, r)
 		}
+		l, err := buildList(ir, t)
+		if err != nil {
+			return nil, err
+		}
+		if l != nil {
+			lists = append(lists, l)
+		}
 	}
-	if len(resources) == 0 {
+	if len(resources) == 0 && len(lists) == 0 {
 		return nil, nil
 	}
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Node < resources[j].Node })
+	sort.Slice(lists, func(i, j int) bool { return lists[i].Node < lists[j].Node })
 
 	storePkg := naming.GoPackage(s.Name)
 	out := &Schema{
@@ -75,6 +84,7 @@ func buildSchema(ir *protokit.IR, s *schema.Schema) (*Schema, error) {
 		StoreGoPackage: storePkg,
 		GoPackage:      storePkg + "cache",
 		Resources:      resources,
+		Lists:          lists,
 	}
 	out.Edges = buildEdges(out, tables)
 

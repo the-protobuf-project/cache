@@ -33,6 +33,7 @@
 - [Annotations](#annotations)
 - [Scoping and the namespace](#scoping-and-the-namespace)
 - [What a write reaches](#what-a-write-reaches)
+- [Caching lists](#caching-lists)
 - [Two paths, and they do not stack](#two-paths-and-they-do-not-stack)
 - [Architecture](#architecture)
 - [What it does not do](#what-it-does-not-do)
@@ -450,6 +451,64 @@ Mind the resource with no `ttl`: its entries persist until something invalidates
 them, so a dropped invalidation there is not stale-for-a-minute, it is stale until
 the next successful write.
 
+## Caching lists
+
+A record decorator never caches `List`. A page is keyed by everything the
+List was asked — parent, filter, order, page size and token — and one write can
+change many pages: a new record lands on some page and shifts every page after
+it. Which pages a write reached is not knowable, so a list cache does not try.
+
+`(cache.v1.cache).list` turns on a separate cache for a resource's pages:
+
+```proto
+message Book {
+  option (cache.v1.cache) = {
+    list: {enabled: true, ttl: {seconds: 60}}
+  };
+}
+```
+
+It is generated into `list.go`, beside the record decorators, and it wraps
+protoc-gen-store's **repository** (`<Model>Repository`) rather than its store,
+so one cache serves the GORM and the GraphQL backend alike. It needs the
+`repository_module` opt, pointing at the repository target's output.
+
+**How a page stays correct.** Each parent has a version. A page is cached under
+its parent's version, and a write to any record under the parent replaces that
+version with a fresh one. Pages under the old version are never read again and
+expire on their own. A List across parents (an AIP-159 `-`) reads a version
+every write moves on. Readers never write a version — one finding none reads
+under `"0"` — so a reader can never resurrect a page a write retired.
+
+**How a write is seen.** protoc-gen-store's `repox.Conn` carries a
+`ChangeObserver`, and every repository and `Batch` built from that connection
+reports each record it writes to it, after the write commits. The generated
+`<Model>ListCache` is that observer:
+
+```go
+db, _ := bookstorev1cache.OpenBookListCache(ctx, provider)
+lists, _ := bookstorev1cache.NewBookListCache(db, bookstorev1cache.WithListErrors(logIt))
+conn := repox.Conn{Gorm: gdb, Changes: repox.Changes{lists}}
+books := lists.Wrap(bookstorev1.New(conn).Books)
+```
+
+Putting the observer on the connection, not on one repository, is the point: a
+process builds many repositories, and a write through any of them must reach
+the cache.
+
+**What bounds it.** A write that does not go through the generated
+repositories — SQL by hand, another service on the same table — is seen by
+nothing, and the pages it made stale are served until `ttl` ends. That is why
+`ttl` is required, and generation is refused without one. Between a write
+committing and its version moving on there is also a window of one round trip
+in which a reader can still be handed the old page.
+
+**What it never does.** A cache failure never fails a List or the write behind
+it. A read the cache cannot answer goes to the repository; a page that cannot be
+stored, or a version that cannot be moved on, is reported to `WithListErrors`.
+Wire that: a version that silently stopped moving is a list served stale for its
+whole ttl.
+
 ## Two paths, and they do not stack
 
 |  | **Generated decorator** (this plugin) | **`cached.Wrap`** (runtime-go) |
@@ -552,11 +611,10 @@ the generated file imports no `core`.
 alias/reverse index maintenance, or stale-while-revalidate. All of that is in
 `core`, and better than a generator would emit.
 
-**It does not cache lists.** The decorator embeds the store interface, so `List`,
-`Count` and anything protoc-gen-store adds later pass straight through, uncached.
-A list result keyed by its filter is a different cache with different
-invalidation, and silently serving one from here is the kind of correctness bug a
-cache is not supposed to introduce.
+**The record decorator does not cache lists.** It embeds the store interface, so
+`List`, `Count` and anything protoc-gen-store adds later pass straight through,
+uncached. A page is a different cache with different invalidation; that is the
+list cache, opted into separately (see [Caching lists](#caching-lists)).
 
 **It does not translate your store's errors.** Negative caching engages only when
 the loader returns something wrapping `cache.ErrNotFound`, and the generated store

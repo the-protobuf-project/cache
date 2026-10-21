@@ -146,7 +146,11 @@ type CacheOptions struct {
 	// It may not contain ':' — that character joins the prefix to the namespace in
 	// the runtime's keyspace, so allowing one would let two configurations that
 	// were never meant to meet address the same keys.
-	Namespace     string `protobuf:"bytes,6,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Namespace string `protobuf:"bytes,6,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	// list caches this resource's List pages. It is independent of enabled:
+	// enabled caches records read one at a time, this caches the pages a List
+	// returns, and a resource may want either, both or neither.
+	List          *ListCacheOptions `protobuf:"bytes,7,opt,name=list,proto3" json:"list,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -223,6 +227,85 @@ func (x *CacheOptions) GetNamespace() string {
 	return ""
 }
 
+func (x *CacheOptions) GetList() *ListCacheOptions {
+	if x != nil {
+		return x.List
+	}
+	return nil
+}
+
+// ListCacheOptions configures the cache of a resource's List pages.
+//
+// A page is a different thing to cache than a record. It is keyed by
+// everything the List was asked -- the parent, the filter, the order, the page
+// size and token -- and any write under the parent can change it: a new record
+// appears on some page, an update moves one across a filter or an order, a
+// delete shifts every page after it. Working out which pages one write reached
+// is not possible in general, so nothing tries. Each parent instead carries a
+// version, every page is cached under its parent's version, and a write to a
+// record replaces its parent's version with a new one. Pages filed under the
+// old version are never read again and expire on their own.
+//
+// A write is seen through the generated repositories (repox.Conn.Changes), so
+// a write that bypasses them -- SQL by hand, another service writing the same
+// table, a GraphQL mutation sent straight to the engine -- is seen by nothing,
+// and the pages it made stale are served until ttl ends. ttl is that bound.
+type ListCacheOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// enabled turns list caching on for this resource.
+	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	// ttl is how long a page may be served. Required, here or as the file's
+	// default ttl: it is the only bound on a page made stale by a write the
+	// repositories never saw.
+	Ttl           *durationpb.Duration `protobuf:"bytes,2,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCacheOptions) Reset() {
+	*x = ListCacheOptions{}
+	mi := &file_cache_v1_cache_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCacheOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCacheOptions) ProtoMessage() {}
+
+func (x *ListCacheOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_cache_v1_cache_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCacheOptions.ProtoReflect.Descriptor instead.
+func (*ListCacheOptions) Descriptor() ([]byte, []int) {
+	return file_cache_v1_cache_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListCacheOptions) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *ListCacheOptions) GetTtl() *durationpb.Duration {
+	if x != nil {
+		return x.Ttl
+	}
+	return nil
+}
+
 // CacheDefaults is the file-level (cache.v1.cache_defaults) annotation: the
 // settings every cached resource in the file inherits unless it says otherwise.
 //
@@ -245,7 +328,7 @@ type CacheDefaults struct {
 
 func (x *CacheDefaults) Reset() {
 	*x = CacheDefaults{}
-	mi := &file_cache_v1_cache_proto_msgTypes[1]
+	mi := &file_cache_v1_cache_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -257,7 +340,7 @@ func (x *CacheDefaults) String() string {
 func (*CacheDefaults) ProtoMessage() {}
 
 func (x *CacheDefaults) ProtoReflect() protoreflect.Message {
-	mi := &file_cache_v1_cache_proto_msgTypes[1]
+	mi := &file_cache_v1_cache_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -270,7 +353,7 @@ func (x *CacheDefaults) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheDefaults.ProtoReflect.Descriptor instead.
 func (*CacheDefaults) Descriptor() ([]byte, []int) {
-	return file_cache_v1_cache_proto_rawDescGZIP(), []int{1}
+	return file_cache_v1_cache_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CacheDefaults) GetStrategy() Strategy {
@@ -332,7 +415,7 @@ type IndexOptions struct {
 
 func (x *IndexOptions) Reset() {
 	*x = IndexOptions{}
-	mi := &file_cache_v1_cache_proto_msgTypes[2]
+	mi := &file_cache_v1_cache_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -344,7 +427,7 @@ func (x *IndexOptions) String() string {
 func (*IndexOptions) ProtoMessage() {}
 
 func (x *IndexOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_cache_v1_cache_proto_msgTypes[2]
+	mi := &file_cache_v1_cache_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -357,7 +440,7 @@ func (x *IndexOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexOptions.ProtoReflect.Descriptor instead.
 func (*IndexOptions) Descriptor() ([]byte, []int) {
-	return file_cache_v1_cache_proto_rawDescGZIP(), []int{2}
+	return file_cache_v1_cache_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *IndexOptions) GetName() string {
@@ -390,7 +473,7 @@ type ScopeOptions struct {
 
 func (x *ScopeOptions) Reset() {
 	*x = ScopeOptions{}
-	mi := &file_cache_v1_cache_proto_msgTypes[3]
+	mi := &file_cache_v1_cache_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -402,7 +485,7 @@ func (x *ScopeOptions) String() string {
 func (*ScopeOptions) ProtoMessage() {}
 
 func (x *ScopeOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_cache_v1_cache_proto_msgTypes[3]
+	mi := &file_cache_v1_cache_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -415,7 +498,7 @@ func (x *ScopeOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScopeOptions.ProtoReflect.Descriptor instead.
 func (*ScopeOptions) Descriptor() ([]byte, []int) {
-	return file_cache_v1_cache_proto_rawDescGZIP(), []int{3}
+	return file_cache_v1_cache_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ScopeOptions) GetSegment() string {
@@ -429,14 +512,18 @@ var File_cache_v1_cache_proto protoreflect.FileDescriptor
 
 const file_cache_v1_cache_proto_rawDesc = "" +
 	"\n" +
-	"\x14cache/v1/cache.proto\x12\bcache.v1\x1a\x1egoogle/protobuf/duration.proto\"\x92\x02\n" +
+	"\x14cache/v1/cache.proto\x12\bcache.v1\x1a\x1egoogle/protobuf/duration.proto\"\xc2\x02\n" +
 	"\fCacheOptions\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12.\n" +
 	"\bstrategy\x18\x02 \x01(\x0e2\x12.cache.v1.StrategyR\bstrategy\x12+\n" +
 	"\x03ttl\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x12/\n" +
 	"\x05stale\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x05stale\x12<\n" +
 	"\fnegative_ttl\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\vnegativeTtl\x12\x1c\n" +
-	"\tnamespace\x18\x06 \x01(\tR\tnamespace\"\xe9\x01\n" +
+	"\tnamespace\x18\x06 \x01(\tR\tnamespace\x12.\n" +
+	"\x04list\x18\a \x01(\v2\x1a.cache.v1.ListCacheOptionsR\x04list\"Y\n" +
+	"\x10ListCacheOptions\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12+\n" +
+	"\x03ttl\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\"\xe9\x01\n" +
 	"\rCacheDefaults\x12.\n" +
 	"\bstrategy\x18\x01 \x01(\x0e2\x12.cache.v1.StrategyR\bstrategy\x12+\n" +
 	"\x03ttl\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x12/\n" +
@@ -468,29 +555,32 @@ func file_cache_v1_cache_proto_rawDescGZIP() []byte {
 }
 
 var file_cache_v1_cache_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cache_v1_cache_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_cache_v1_cache_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_cache_v1_cache_proto_goTypes = []any{
 	(Strategy)(0),               // 0: cache.v1.Strategy
 	(*CacheOptions)(nil),        // 1: cache.v1.CacheOptions
-	(*CacheDefaults)(nil),       // 2: cache.v1.CacheDefaults
-	(*IndexOptions)(nil),        // 3: cache.v1.IndexOptions
-	(*ScopeOptions)(nil),        // 4: cache.v1.ScopeOptions
-	(*durationpb.Duration)(nil), // 5: google.protobuf.Duration
+	(*ListCacheOptions)(nil),    // 2: cache.v1.ListCacheOptions
+	(*CacheDefaults)(nil),       // 3: cache.v1.CacheDefaults
+	(*IndexOptions)(nil),        // 4: cache.v1.IndexOptions
+	(*ScopeOptions)(nil),        // 5: cache.v1.ScopeOptions
+	(*durationpb.Duration)(nil), // 6: google.protobuf.Duration
 }
 var file_cache_v1_cache_proto_depIdxs = []int32{
-	0, // 0: cache.v1.CacheOptions.strategy:type_name -> cache.v1.Strategy
-	5, // 1: cache.v1.CacheOptions.ttl:type_name -> google.protobuf.Duration
-	5, // 2: cache.v1.CacheOptions.stale:type_name -> google.protobuf.Duration
-	5, // 3: cache.v1.CacheOptions.negative_ttl:type_name -> google.protobuf.Duration
-	0, // 4: cache.v1.CacheDefaults.strategy:type_name -> cache.v1.Strategy
-	5, // 5: cache.v1.CacheDefaults.ttl:type_name -> google.protobuf.Duration
-	5, // 6: cache.v1.CacheDefaults.stale:type_name -> google.protobuf.Duration
-	5, // 7: cache.v1.CacheDefaults.negative_ttl:type_name -> google.protobuf.Duration
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	0,  // 0: cache.v1.CacheOptions.strategy:type_name -> cache.v1.Strategy
+	6,  // 1: cache.v1.CacheOptions.ttl:type_name -> google.protobuf.Duration
+	6,  // 2: cache.v1.CacheOptions.stale:type_name -> google.protobuf.Duration
+	6,  // 3: cache.v1.CacheOptions.negative_ttl:type_name -> google.protobuf.Duration
+	2,  // 4: cache.v1.CacheOptions.list:type_name -> cache.v1.ListCacheOptions
+	6,  // 5: cache.v1.ListCacheOptions.ttl:type_name -> google.protobuf.Duration
+	0,  // 6: cache.v1.CacheDefaults.strategy:type_name -> cache.v1.Strategy
+	6,  // 7: cache.v1.CacheDefaults.ttl:type_name -> google.protobuf.Duration
+	6,  // 8: cache.v1.CacheDefaults.stale:type_name -> google.protobuf.Duration
+	6,  // 9: cache.v1.CacheDefaults.negative_ttl:type_name -> google.protobuf.Duration
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_cache_v1_cache_proto_init() }
@@ -504,7 +594,7 @@ func file_cache_v1_cache_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cache_v1_cache_proto_rawDesc), len(file_cache_v1_cache_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

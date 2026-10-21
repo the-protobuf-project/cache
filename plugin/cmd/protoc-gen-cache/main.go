@@ -19,6 +19,7 @@
 //	    out: generated/cache
 //	    opt:
 //	      - store_module=github.com/me/gen/gorm
+//	      - repository_module=github.com/me/gen/repository  # only for list caches
 //
 // # What it generates, and what it deliberately does not
 //
@@ -100,6 +101,9 @@ func main() {
 	storeModule := flags.String("store_module", "",
 		"Go import path of protoc-gen-store's gorm output directory (e.g. github.com/me/gen/gorm); "+
 			"the generated decorator imports the store interfaces from under it")
+	repositoryModule := flags.String("repository_module", "",
+		"Go import path of protoc-gen-store's repository output directory (e.g. github.com/me/gen/repository); "+
+			"the generated list caches import the repository interfaces and repox from under it")
 	configPath := flags.String("config", "",
 		"path to a cache.yaml mapping proto packages to databases/schemas")
 	strict := flags.String("strict", "",
@@ -126,6 +130,7 @@ func main() {
 		// every golden file record the build environment that produced it.
 		return protokit.RunPlugin(p,
 			protokit.Options{Target: generator.TargetName, Strict: *strict, Version: v},
-			generator.Plugin(*storeModule, generator.ResolveVersions(v), cfg.Layout()))
+			generator.Plugin(generator.Modules{Store: *storeModule, Repository: *repositoryModule},
+				generator.ResolveVersions(v), cfg.Layout()))
 	})
 }

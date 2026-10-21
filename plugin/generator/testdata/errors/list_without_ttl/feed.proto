@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+// feed.proto caches a list with no ttl anywhere: refused, since ttl is the only
+// bound on a page a write the repositories never saw made stale.
+package feed.v1;
+
+import "cache/v1/annotations.proto";
+import "entity/v1/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "FeedProto";
+option java_package = "com.feed.v1";
+option (entity.v1.datasource) = {
+  database: "feed_db"
+  schema: "feed"
+};
+
+// Post is listed, never cached one at a time.
+message Post {
+  option (google.api.resource) = {
+    type: "feed.v1/Post"
+    pattern: "posts/{post}"
+    singular: "post"
+    plural: "posts"
+  };
+  option (entity.v1.table) = {id: ID_STRATEGY_ULID};
+  option (cache.v1.cache) = {
+    list: {enabled: true}
+  };
+
+  // name is the AIP resource name.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+}

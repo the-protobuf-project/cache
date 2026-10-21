@@ -23,10 +23,24 @@ import (
 	"github.com/the-protobuf-project/cache/plugin/cachev1"
 )
 
+// Modules are the Go import paths of the protoc-gen-store outputs the
+// generated code imports. They are paths rather than dependencies: the two
+// plugins never see each other, and these are the only thing joining them.
+type Modules struct {
+	// Store is protoc-gen-store's gorm output (store_module), whose
+	// <Model>StoreIface the record decorators wrap.
+	Store string
+
+	// Repository is protoc-gen-store's repository output (repository_module),
+	// whose <Model>Repository the list caches wrap. Needed only when a
+	// resource caches its list.
+	Repository string
+}
+
 // Registry is the target set this plugin ships.
-func Registry(storeModule string, versions Versions) map[string]schema.Target {
+func Registry(mods Modules, versions Versions) map[string]schema.Target {
 	return map[string]schema.Target{
-		TargetName: New(storeModule, versions),
+		TargetName: New(mods, versions),
 	}
 }
 
@@ -35,9 +49,9 @@ func Registry(storeModule string, versions Versions) map[string]schema.Target {
 // Readers comes from cachev1.Readers(), which pairs this plugin's own reader with
 // entity.Reader() imported from the store repository. That import is the entire
 // mechanism behind golden.IRAgreement — see the comment on cache.Readers.
-func Plugin(storeModule string, versions Versions, layout protokit.LayoutResolver) protokit.Plugin {
+func Plugin(mods Modules, versions Versions, layout protokit.LayoutResolver) protokit.Plugin {
 	return protokit.Plugin{
-		Registry: Registry(storeModule, versions),
+		Registry: Registry(mods, versions),
 		Readers:  cachev1.Readers(),
 		Layout:   layout,
 	}

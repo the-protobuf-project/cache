@@ -82,6 +82,11 @@ type Schema struct {
 	// Resources are the cached resources, sorted by proto message name.
 	Resources []*Resource
 
+	// Lists are the resources whose List pages are cached, sorted by proto
+	// message name. A resource can be in Lists without being in Resources:
+	// the two caches are independent (see list.go).
+	Lists []*ListResource
+
 	// Edges is every invalidation edge originating in this schema, sorted. It is
 	// emitted as data so the blast radius of a write is readable in the output
 	// and so a CDC consumer can act on it without regenerating.
