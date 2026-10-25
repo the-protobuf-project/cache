@@ -91,14 +91,14 @@ homebrew_casks:
       - protoc-gen-cache-archive
     binaries:
       - protoc-gen-cache
-    url:
-      verified: 'github.com/the-protobuf-project/cache/'
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/protoc-gen-cache"]
-          end
+    # Homebrew deprecated `postflight`; GoReleaser hooks can only emit that,
+    # so the install steps go in a custom block instead.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "protoc-gen-cache"], chdir: "."
+        end
+      end
 
 release:
   github:
