@@ -119,8 +119,12 @@ func buildResource(ir *protokit.IR, t *schema.Table) (*Resource, error) {
 	res := resourceDescriptor(t.Source)
 
 	r := &Resource{
-		Node:         t.Node,
-		Model:        t.ModelName,
+		Node: t.Node,
+		// The store's per-schema packages name the Go type by the bare
+		// LocalName; ModelName is qualified for a database-wide namespace
+		// ("PromotionPromotion" beside another schema's "Promotion") and names
+		// nothing the decorator imports.
+		Model:        t.LocalName,
 		Table:        t.Name,
 		PKColumn:     t.PKColumn,
 		ResourceType: res.GetType(),

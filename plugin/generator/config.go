@@ -23,6 +23,8 @@ import (
 
 	"github.com/the-protobuf-project/protokit"
 	"github.com/the-protobuf-project/store/plugin/entity"
+
+	"github.com/the-protobuf-project/cache/plugin/cachev1"
 )
 
 // Config is cache.yaml.
@@ -30,6 +32,20 @@ type Config struct {
 	// LayoutConfig is the shared naming policy: datasources, strip_version,
 	// dedupe_schema_table. Declared in the entity module, not here.
 	entity.LayoutConfig `yaml:",inline"`
+
+	// Resources are (cache.v1.cache) for resources whose protos cannot carry
+	// it -- a schema module owned upstream. The first rule matching a resource
+	// message's full name applies; an annotation on the message wins over any
+	// rule. See cachev1.Rule.
+	Resources []cachev1.Rule `yaml:"resources"`
+}
+
+// Rules are c's resources rules; none when there is no config.
+func (c *Config) Rules() []cachev1.Rule {
+	if c == nil {
+		return nil
+	}
+	return c.Resources
 }
 
 // Load reads cache.yaml from path. An empty path means "no config", which is a
@@ -52,6 +68,13 @@ func LoadConfig(path string) (*Config, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("cache: parse config %s: %w", path, err)
+	}
+	// A rule that does not parse fails here, naming its key, rather than at
+	// the first resource it would have matched.
+	for _, r := range c.Resources {
+		if _, err := r.Options(); err != nil {
+			return nil, fmt.Errorf("cache: config %s: %w", path, err)
+		}
 	}
 	return &c, nil
 }

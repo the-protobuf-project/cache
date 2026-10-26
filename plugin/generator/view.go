@@ -122,7 +122,10 @@ type edgeWireView struct {
 	TargetModel string
 	// ViaGoField is the field on this resource's model holding the target id.
 	ViaGoField string
-	Doc        string
+	// ViaOptional reports whether ViaGoField is a pointer, nil when the
+	// reference is unset.
+	ViaOptional bool
+	Doc         string
 }
 
 type edgeView struct {

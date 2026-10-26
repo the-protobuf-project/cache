@@ -47,11 +47,12 @@ const Key = "cache.v1"
 // Reader returns the reader for cache.v1: a protokit.FacetReader supplying the
 // per-node cache configuration this plugin's target reads back.
 //
-// It is stateless. cache.v1 is read straight off the descriptors, with no config
-// and no per-run state, so the zero value is the whole thing.
-func Reader() protokit.FacetReader { return reader{} }
+// cache.v1 is read straight off the descriptors. rules, cache.yaml's resources,
+// stand in for (cache.v1.cache) on resource messages that carry none (rules.go);
+// with none, the zero value is the whole thing.
+func Reader(rules ...Rule) protokit.FacetReader { return reader{rules: rules} }
 
-type reader struct{}
+type reader struct{ rules []Rule }
 
 // Compile-time proof of what this reader is — and, by omission, of what it is
 // not. There is no schema.StructureReader assertion here because implementing
@@ -80,10 +81,10 @@ func (reader) Key() string { return Key }
 // here would address rows that protoc-gen-store never persisted under that name.
 // That is the failure the whole split exists to prevent, and importing is what
 // prevents it.
-func Readers() []protokit.FacetReader {
+func Readers(rules ...Rule) []protokit.FacetReader {
 	return []protokit.FacetReader{
 		entity.Reader(),
-		Reader(),
+		Reader(rules...),
 	}
 }
 
@@ -99,10 +100,18 @@ func (reader) ReadFile(d protoreflect.FileDescriptor) (any, error) {
 	return proto.GetExtension(d.Options(), cachepbv1.E_CacheDefaults).(*cachepbv1.CacheDefaults), nil
 }
 
-// ReadMessage returns the message's (cache.v1.cache), or nil.
-func (reader) ReadMessage(d protoreflect.MessageDescriptor) (any, error) {
-	if d == nil || !proto.HasExtension(d.Options(), cachepbv1.E_Cache) {
+// ReadMessage returns the message's (cache.v1.cache), else the options of the
+// first rule naming it, or nil.
+func (r reader) ReadMessage(d protoreflect.MessageDescriptor) (any, error) {
+	if d == nil {
 		return nil, nil
+	}
+	if !proto.HasExtension(d.Options(), cachepbv1.E_Cache) {
+		opts, err := ruleFor(r.rules, d)
+		if opts == nil || err != nil {
+			return nil, err
+		}
+		return opts, nil
 	}
 	return proto.GetExtension(d.Options(), cachepbv1.E_Cache).(*cachepbv1.CacheOptions), nil
 }

@@ -131,6 +131,6 @@ func main() {
 		return protokit.RunPlugin(p,
 			protokit.Options{Target: generator.TargetName, Strict: *strict, Version: v},
 			generator.Plugin(generator.Modules{Store: *storeModule, Repository: *repositoryModule},
-				generator.ResolveVersions(v), cfg.Layout()))
+				generator.ResolveVersions(v), cfg.Layout(), cfg.Rules()...))
 	})
 }

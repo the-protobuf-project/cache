@@ -186,12 +186,21 @@ func (s *cached{{ .Model }}Store) after(ctx context.Context, m *{{ $.StorePackag
 {{- end }}
 {{- range .EdgeWires }}
 	// {{ .Doc }}
+	{{- if .ViaOptional }}
+	if s.edges.{{ .Field }} != nil && m.{{ .ViaGoField }} != nil {
+		if err := s.opts.afterWrite(ctx, {{ printf "%q" $.Node }}, "invalidate {{ .TargetModel }}",
+			s.edges.{{ .Field }}.Invalidate(ctx, *m.{{ .ViaGoField }})); err != nil {
+			return err
+		}
+	}
+	{{- else }}
 	if s.edges.{{ .Field }} != nil {
 		if err := s.opts.afterWrite(ctx, {{ printf "%q" $.Node }}, "invalidate {{ .TargetModel }}",
 			s.edges.{{ .Field }}.Invalidate(ctx, m.{{ .ViaGoField }})); err != nil {
 			return err
 		}
 	}
+	{{- end }}
 {{- end }}
 	return nil
 }

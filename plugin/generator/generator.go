@@ -49,10 +49,11 @@ func Registry(mods Modules, versions Versions) map[string]schema.Target {
 // Readers comes from cachev1.Readers(), which pairs this plugin's own reader with
 // entity.Reader() imported from the store repository. That import is the entire
 // mechanism behind golden.IRAgreement — see the comment on cache.Readers.
-func Plugin(mods Modules, versions Versions, layout protokit.LayoutResolver) protokit.Plugin {
+// rules are cache.yaml's resources (Config.Rules).
+func Plugin(mods Modules, versions Versions, layout protokit.LayoutResolver, rules ...cachev1.Rule) protokit.Plugin {
 	return protokit.Plugin{
 		Registry: Registry(mods, versions),
-		Readers:  cachev1.Readers(),
+		Readers:  cachev1.Readers(rules...),
 		Layout:   layout,
 	}
 }

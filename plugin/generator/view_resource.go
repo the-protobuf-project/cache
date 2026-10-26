@@ -98,6 +98,7 @@ func buildResource(r *spec.Resource, storePackage string) resourceView {
 			Field:       e.ToModel,
 			TargetModel: e.ToModel,
 			ViaGoField:  e.ViaGoField,
+			ViaOptional: e.ViaOptional,
 			Doc:         e.Reason,
 		})
 	}

@@ -41,6 +41,10 @@ type Edge struct {
 	ViaColumn  string
 	ViaGoField string
 
+	// ViaOptional reports whether the column is nullable, and so the field a
+	// pointer: an unset reference invalidates nothing.
+	ViaOptional bool
+
 	// Reason is a short human-readable justification, rendered into the
 	// generated data so the set explains itself without this package.
 	Reason string
@@ -68,13 +72,23 @@ func buildEdges(s *Schema, tables map[schema.NodeID]*schema.Table) []Edge {
 			if !ok || target.Node == r.Node {
 				continue
 			}
+			// The model's field for the column, named as protoc-gen-store
+			// names it: a reference column's field carries the ID suffix
+			// (menu -> MenuID), the bare name being its association.
+			via, optional := naming.PascalGo(fk.Column), false
+			for _, c := range t.Columns {
+				if c.Name == fk.Column {
+					via, optional = GoFieldOf(c), c.Optional
+				}
+			}
 			out = append(out, Edge{
-				From:       r.Node,
-				FromModel:  r.Model,
-				To:         target.Node,
-				ToModel:    target.Model,
-				ViaColumn:  fk.Column,
-				ViaGoField: naming.PascalGo(fk.Column),
+				From:        r.Node,
+				FromModel:   r.Model,
+				To:          target.Node,
+				ToModel:     target.Model,
+				ViaColumn:   fk.Column,
+				ViaGoField:  via,
+				ViaOptional: optional,
 				Reason: fmt.Sprintf("%s.%s references %s, so writing a %s changes what that %s preloads",
 					r.Model, fk.Column, target.Model, r.Model, target.Model),
 			})
