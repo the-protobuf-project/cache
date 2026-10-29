@@ -194,6 +194,24 @@ books, err := bookstorev1cache.NewCachedBookStore(ctx, inner, db, scope,
 
 `books` is a `BookStoreIface` — the same interface `inner` satisfies.
 
+Under protoc-gen-store's repositories (store v1.7.0 and later), put it there with
+the repository option `With<Model>Store`, which builds the store a repository
+goes through over each handle it uses — its own, or the transaction a write runs
+in. A repository's `Get` of a one-row resource then reads through the decorator:
+
+```go
+repos := bookstore.New(conn, bookstore.WithBookStore(func(db *gorm.DB) gormbookstore.BookStoreIface {
+    s, err := bookstorev1cache.NewCachedBookStore(ctx, gormbookstore.NewBookStore(db), cdb, scope)
+    if err != nil {
+        return gormbookstore.NewBookStore(db) // the cache is optional; the store is not
+    }
+    return s
+}))
+```
+
+The function runs for every repository read and write, so open the cache (`cdb`)
+once, outside it.
+
 ### Run it
 
 ```sh
