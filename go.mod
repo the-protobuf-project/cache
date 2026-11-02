@@ -43,7 +43,7 @@ module github.com/the-protobuf-project/cache
 go 1.26.5
 
 require (
-	github.com/the-protobuf-project/protokit v1.3.8
+	github.com/the-protobuf-project/protokit v1.4.0
 	github.com/the-protobuf-project/store v1.6.9
 	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e
 	google.golang.org/protobuf v1.36.12
@@ -53,6 +53,7 @@ require (
 require (
 	github.com/agnivade/levenshtein v1.2.2 // indirect
 	github.com/bufbuild/protocompile v0.14.1 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/the-protobuf-project/telemetry/telemetry-go v0.0.0-20261023093202-d14384d7957b // indirect
 	github.com/vektah/gqlparser/v2 v2.5.64 // indirect
 	golang.org/x/net v0.62.0 // indirect
@@ -61,4 +62,5 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
 	google.golang.org/grpc v1.85.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
