@@ -38,6 +38,12 @@ type ListResource struct {
 	ResourceType string
 	Pattern      string
 
+	// Package, Message, Plural and NameField are as on Resource.
+	Package   string
+	Message   string
+	Plural    string
+	NameField string
+
 	// Collections are the pattern's collection segments in order
 	// ("organizationalUnits", "reservations"). A written record's name is
 	// matched against them to find its parent.
@@ -97,6 +103,7 @@ func buildList(ir *protokit.IR, t *schema.Table) (*ListResource, error) {
 		Parented:     len(collections) > 1,
 		TTL:          ttl,
 	}
+	r.Package, r.Message, r.Plural, r.NameField = protoIdentity(t, res)
 	r.Namespace = baseName(&Resource{ResourceType: r.ResourceType, Model: t.ModelName}, t) + ".list"
 	return r, nil
 }

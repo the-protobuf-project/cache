@@ -35,12 +35,17 @@ type Modules struct {
 	// whose <Model>Repository the list caches wrap. Needed only when a
 	// resource caches its list.
 	Repository string
+
+	// Rust are the module paths lang=rust output names (rust_repository_module,
+	// rust_proto_module).
+	Rust RustModules
 }
 
 // Registry is the target set this plugin ships.
 func Registry(mods Modules, versions Versions) map[string]schema.Target {
 	return map[string]schema.Target{
-		TargetName: New(mods, versions),
+		TargetName:     New(mods, versions),
+		RustTargetName: NewRust(mods.Rust, versions),
 	}
 }
 
