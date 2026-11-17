@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
@@ -30,24 +31,30 @@ import (
 // RustTargetName is the target lang=rust selects.
 const RustTargetName = "rustcache"
 
-// RustModules are the Rust module paths the generated cache.rs names. Each may
-// hold "{package}", replaced by the proto package as a module path
-// ("bookstore.v1" -> "bookstore::v1").
+// RustModules are the base Rust modules the generated cache.rs names. Each is a
+// base: the proto package is appended as a module path ("bookstore.v1" ->
+// "::bookstore::v1"), as protoc-gen-store's and protoc-gen-service's Rust
+// targets append it to rust_proto_module.
 type RustModules struct {
-	// Repository is where protoc-gen-store's Rust repository target put the
-	// package's Repositories struct (rust_repository_module).
+	// Repository is the base of protoc-gen-store's lang=rust target=repository
+	// output (rust_repository_module): it writes one module per proto package
+	// at <crate>::<package path>, holding that package's Repositories struct.
 	Repository string
 
-	// Proto is where the package's prost types are (rust_proto_module).
+	// Proto is the base of the prost modules (rust_proto_module).
 	Proto string
 }
 
-// The defaults: a crate with a `repository` module and a `pb` module, each
-// mirroring the proto package tree.
+// The defaults: protoc-gen-store's repositories and protoc-gen-cache's output
+// in one crate, the prost types under crate::pb, as protoc-gen-store and
+// protoc-gen-service default them.
 const (
-	DefaultRustRepositoryModule = "crate::repository::{package}"
-	DefaultRustProtoModule      = "crate::pb::{package}"
+	DefaultRustRepositoryModule = "crate"
+	DefaultRustProtoModule      = "crate::pb"
 )
+
+// rustModuleRe is a Rust module path: identifiers joined by "::".
+var rustModuleRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$`)
 
 func (m RustModules) withDefaults() RustModules {
 	if m.Repository == "" {
@@ -57,6 +64,19 @@ func (m RustModules) withDefaults() RustModules {
 		m.Proto = DefaultRustProtoModule
 	}
 	return m
+}
+
+func (m RustModules) check() error {
+	for _, opt := range []struct{ name, value string }{
+		{"rust_repository_module", m.Repository},
+		{"rust_proto_module", m.Proto},
+	} {
+		if !rustModuleRe.MatchString(opt.value) {
+			return fmt.Errorf("cache: %s %q is not a Rust module path (e.g. crate::pb); the proto "+
+				"package is appended to it", opt.name, opt.value)
+		}
+	}
+	return nil
 }
 
 var rustTmpl = template.Must(template.New("cache.rs.tmpl").ParseFS(templates, "templates/cache.rs.tmpl"))
@@ -84,6 +104,9 @@ func (*RustTarget) Generate(*protogen.Plugin, []*schema.Database) error {
 // GenerateIR builds the spec and renders one cache.rs per proto package with
 // a cached record or list.
 func (t *RustTarget) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
+	if err := t.Modules.check(); err != nil {
+		return err
+	}
 	sp, err := spec.Build(ir)
 	if err != nil {
 		return err

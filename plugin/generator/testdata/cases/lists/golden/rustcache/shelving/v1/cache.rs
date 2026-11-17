@@ -33,7 +33,7 @@ use database::repository::cached::{
 };
 
 use crate::pb::shelving::v1 as pb;
-use crate::repository::shelving::v1::Repositories;
+use crate::shelving::v1::Repositories;
 
 /// Where `shelving.v1.Note`'s record entries live: the namespace `shelving.v1.note.{shelf}`
 /// over `shelves/{shelf}/notes/{note}`.

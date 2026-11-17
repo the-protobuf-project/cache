@@ -241,7 +241,7 @@ func TestRustOutputNamesOnlyItsContract(t *testing.T) {
 				case strings.HasPrefix(line, "use std::"),
 					strings.HasPrefix(line, "use database::repository::cached::"),
 					strings.HasPrefix(line, "use crate::pb::"),
-					strings.HasPrefix(line, "use crate::repository::"):
+					strings.HasPrefix(line, "use crate::") && strings.HasSuffix(line, "::Repositories;"):
 				default:
 					t.Errorf("%s: %q: the output may use std, database::repository::cached, and "+
 						"the proto and repository modules, nothing else", path, line)
@@ -251,6 +251,27 @@ func TestRustOutputNamesOnlyItsContract(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// The Rust module options are bases the package path is appended to, as
+// protoc-gen-store and protoc-gen-service read rust_proto_module; anything
+// that is not a module path, such as the {package} template this option once
+// took, is refused rather than rendered into a use that does not compile.
+func TestRustModuleOptionsAreBases(t *testing.T) {
+	for _, bad := range []string{"crate::pb::{package}", "crate::pb;", "crate::"} {
+		mods := testModules
+		mods.Rust = generator.RustModules{Proto: bad}
+		req := golden.BuildRequest(t, filepath.Join("testdata", "cases", "lists"))
+		p, err := protogen.Options{}.New(req)
+		if err != nil {
+			t.Fatalf("protogen: %v", err)
+		}
+		err = protokit.RunPlugin(p, protokit.Options{Target: generator.RustTargetName},
+			generator.Plugin(mods, testVersions, nil))
+		if err == nil || !strings.Contains(err.Error(), "rust_proto_module") {
+			t.Errorf("rust_proto_module=%q: got %v, want a refusal naming the option", bad, err)
 		}
 	}
 }

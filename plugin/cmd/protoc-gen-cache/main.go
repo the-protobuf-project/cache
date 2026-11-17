@@ -127,10 +127,11 @@ func main() {
 		"output language: go (decorators over protoc-gen-store's Go stores) or rust (cache plans "+
 			"over protoc-gen-store's lang=rust target=repository output)")
 	rustRepositoryModule := flags.String("rust_repository_module", generator.DefaultRustRepositoryModule,
-		"lang=rust: the Rust module holding each package's Repositories struct; {package} is the "+
-			"proto package as a module path (bookstore.v1 -> bookstore::v1)")
+		"lang=rust: the base module of protoc-gen-store's lang=rust target=repository output; the "+
+			"proto package is appended (bookstore.v1 -> <base>::bookstore::v1::Repositories)")
 	rustProtoModule := flags.String("rust_proto_module", generator.DefaultRustProtoModule,
-		"lang=rust: the Rust module holding each package's prost types; {package} as above")
+		"lang=rust: the base module of the prost types, as protoc-gen-store and protoc-gen-service "+
+			"read it; the proto package is appended (<base>::bookstore::v1)")
 	configPath := flags.String("config", "",
 		"path to a cache.yaml mapping proto packages to databases/schemas")
 	strict := flags.String("strict", "",

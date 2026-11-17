@@ -6,8 +6,8 @@
 //!
 //! - `pb`: the prost types prost-build generates from the same protos, written out by
 //!   hand (only the fields the tests use).
-//! - `repository`: the `Repositories` struct protoc-gen-store `lang=rust
-//!   target=repository` generates per package.
+//! - `bookstore::v1`, `shelving::v1`: the `Repositories` struct protoc-gen-store
+//!   `lang=rust target=repository` generates per package, at the crate root.
 
 use std::sync::Arc;
 
@@ -89,39 +89,40 @@ pub mod pb {
     }
 }
 
-/// What protoc-gen-store `lang=rust target=repository` generates per package.
-pub mod repository {
-    /// `bookstore.v1`.
-    pub mod bookstore {
-        /// `bookstore.v1`.
-        pub mod v1 {
-            use super::super::super::*;
+// What protoc-gen-store `lang=rust target=repository` generates: one module per proto
+// package at the crate root (`crate::<package path>`), each with its Repositories struct.
+// That is rust_repository_module's default base, `crate`.
 
-            /// The package's repositories.
-            pub struct Repositories {
-                /// `bookstore.v1.Author`.
-                pub authors: Arc<dyn Repository<pb::bookstore::v1::Author>>,
-                /// `bookstore.v1.Book`.
-                pub books: Arc<dyn Repository<pb::bookstore::v1::Book>>,
-                /// `bookstore.v1.Shelf`, which no annotation caches.
-                pub shelves: Arc<dyn Repository<pb::bookstore::v1::Shelf>>,
-            }
+/// `bookstore.v1`.
+pub mod bookstore {
+    /// `bookstore.v1`.
+    pub mod v1 {
+        use super::super::*;
+
+        /// The package's repositories.
+        pub struct Repositories {
+            /// `bookstore.v1.Author`.
+            pub authors: Arc<dyn Repository<pb::bookstore::v1::Author>>,
+            /// `bookstore.v1.Book`.
+            pub books: Arc<dyn Repository<pb::bookstore::v1::Book>>,
+            /// `bookstore.v1.Shelf`, which no annotation caches.
+            pub shelves: Arc<dyn Repository<pb::bookstore::v1::Shelf>>,
         }
     }
+}
 
+/// `shelving.v1`.
+pub mod shelving {
     /// `shelving.v1`.
-    pub mod shelving {
-        /// `shelving.v1`.
-        pub mod v1 {
-            use super::super::super::*;
+    pub mod v1 {
+        use super::super::*;
 
-            /// The package's repositories.
-            pub struct Repositories {
-                /// `shelving.v1.Shelf`.
-                pub shelves: Arc<dyn Repository<pb::shelving::v1::Shelf>>,
-                /// `shelving.v1.Note`.
-                pub notes: Arc<dyn Repository<pb::shelving::v1::Note>>,
-            }
+        /// The package's repositories.
+        pub struct Repositories {
+            /// `shelving.v1.Shelf`.
+            pub shelves: Arc<dyn Repository<pb::shelving::v1::Shelf>>,
+            /// `shelving.v1.Note`.
+            pub notes: Arc<dyn Repository<pb::shelving::v1::Note>>,
         }
     }
 }

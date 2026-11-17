@@ -15,7 +15,7 @@ use cache::core::{
 };
 use cache_rust_example::pb::bookstore::v1::{Author, Book, Shelf};
 use cache_rust_example::pb::shelving::v1 as shelving;
-use cache_rust_example::{bookstore_cache, repository, shelving_cache};
+use cache_rust_example::{bookstore, bookstore_cache, shelving as shelving_store, shelving_cache};
 use database::repository::cached::Hooks;
 use database::repository::{ListInput, Page, Repository};
 use database::{Error, Result};
@@ -149,7 +149,7 @@ fn cache_db() -> (Arc<cache::DB>, Arc<MemoryDriver>) {
 struct Bookstore {
     authors: Arc<Fake<Author>>,
     books: Arc<Fake<Book>>,
-    repos: repository::bookstore::v1::Repositories,
+    repos: bookstore::v1::Repositories,
     shelves: Arc<dyn Repository<Shelf>>,
     db: Arc<cache::DB>,
     driver: Arc<MemoryDriver>,
@@ -161,7 +161,7 @@ fn bookstore(hooks: Hooks) -> Bookstore {
     let shelves: Arc<dyn Repository<Shelf>> = Fake::new(|m: &Shelf| m.name.clone());
     let (db, driver) = cache_db();
     let repos = bookstore_cache::cache_repositories_with(
-        repository::bookstore::v1::Repositories {
+        bookstore::v1::Repositories {
             authors: authors.clone(),
             books: books.clone(),
             shelves: shelves.clone(),
@@ -481,7 +481,7 @@ async fn an_uncached_resource_is_left_as_it_was() {
 struct Shelving {
     shelves: Arc<Fake<shelving::Shelf>>,
     notes: Arc<Fake<shelving::Note>>,
-    repos: repository::shelving::v1::Repositories,
+    repos: shelving_store::v1::Repositories,
 }
 
 fn shelving_repos() -> Shelving {
@@ -489,7 +489,7 @@ fn shelving_repos() -> Shelving {
     let notes = Fake::new(|m: &shelving::Note| m.name.clone());
     let (db, _) = cache_db();
     let repos = shelving_cache::cache_repositories(
-        repository::shelving::v1::Repositories {
+        shelving_store::v1::Repositories {
             shelves: shelves.clone(),
             notes: notes.clone(),
         },

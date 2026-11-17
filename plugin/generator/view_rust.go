@@ -24,7 +24,7 @@ type rustFileView struct {
 	// RepoModule and ProtoModule are the resolved module paths.
 	RepoModule  string
 	ProtoModule string
-	// ProtoUse is the use of ProtoModule as `pb`, without a redundant alias.
+	// ProtoUse is the use of ProtoModule as `pb`.
 	ProtoUse string
 
 	Keyspaces []rustKeyspace
@@ -109,13 +109,10 @@ func buildRustFiles(sp *spec.Spec, mods RustModules) ([]*rustFileView, error) {
 			pkgPath := rustModulePath(pkg)
 			f = &rustFileView{
 				Package:     pkg,
-				RepoModule:  strings.ReplaceAll(mods.Repository, "{package}", pkgPath),
-				ProtoModule: strings.ReplaceAll(mods.Proto, "{package}", pkgPath),
+				RepoModule:  mods.Repository + "::" + pkgPath,
+				ProtoModule: mods.Proto + "::" + pkgPath,
 			}
 			f.ProtoUse = f.ProtoModule + " as pb"
-			if f.ProtoModule == "pb" || strings.HasSuffix(f.ProtoModule, "::pb") {
-				f.ProtoUse = f.ProtoModule
-			}
 			files[pkg] = f
 		}
 		pair := [2]string{db, schemaName}

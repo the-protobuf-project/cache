@@ -32,8 +32,8 @@ use database::repository::cached::{
     self, DeclaredEdge, Edge, Hooks, Index, Keyspace, Part, Plan, Record, Strategy,
 };
 
+use crate::bookstore::v1::Repositories;
 use crate::pb::bookstore::v1 as pb;
-use crate::repository::bookstore::v1::Repositories;
 
 /// Where `bookstore.v1.Author`'s record entries live: the namespace `bookstore.v1.author`
 /// over `authors/{author}`.

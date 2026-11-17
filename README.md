@@ -561,13 +561,26 @@ plugins:
     out: src/generated
     opt:
       - lang=rust
-      - rust_repository_module=crate::repository::{package}   # the default
-      - rust_proto_module=crate::pb::{package}                 # the default
+      - rust_repository_module=crate   # the default
+      - rust_proto_module=crate::pb    # the default
 ```
 
-`{package}` is the proto package as a module path (`bookstore.v1` -> `bookstore::v1`).
-`rust_repository_module` is where the package's `Repositories` struct is,
-`rust_proto_module` where its prost types are. No `go_package` or `M` option is needed.
+Both options are **base** modules, and the proto package is appended to each as a module
+path (`bookstore.v1` -> `::bookstore::v1`), exactly as protoc-gen-store's and
+protoc-gen-service's Rust targets read `rust_proto_module`:
+
+| Option | Default | Names |
+|---|---|---|
+| `rust_proto_module` | `crate::pb` | the prost types: `use crate::pb::bookstore::v1 as pb;` |
+| `rust_repository_module` | `crate` | protoc-gen-store's `lang=rust target=repository` modules, which it writes at `<crate>::<package path>`: `use crate::bookstore::v1::Repositories;` |
+
+So protoc-gen-store and protoc-gen-cache run into one crate need no options. Each
+package's `cache.rs` lands beside protoc-gen-store's `mod.rs` for it
+(`bookstore/v1/cache.rs`); mount it from there (`pub mod cache;`) or from wherever the
+crate keeps it. Mounted elsewhere, or with the repositories in another crate, set
+`rust_repository_module` to that base (`my_store`, `crate::store`). Neither option
+takes a template, and a value that is not a module path is refused. No `go_package` or
+`M` option is needed.
 
 ### What is generated
 
@@ -586,7 +599,7 @@ a `Keyspace` static per cached resource, a `<model>_plan()` per resource, and
 ```rust
 let repos = bookstore::v1::repositories(db, pool)?;                 // protoc-gen-store
 let cdb = provider.set_database("bookstore").await?;               // any name; see below
-let repos = bookstore::v1::cache::cache_repositories(repos, Arc::new(cdb));
+let repos = bookstore::v1::cache::cache_repositories(repos, Arc::new(cdb)); // pub mod cache; in bookstore/v1/mod.rs
 ```
 
 **Generated versus generic.** The decorator is not generated: it is runtime-rs's
