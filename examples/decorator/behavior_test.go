@@ -11,7 +11,7 @@ import (
 	"github.com/the-protobuf-project/cache/examples/fakecache"
 	"github.com/the-protobuf-project/cache/examples/fakestore"
 	"github.com/the-protobuf-project/cache/examples/generated/cache/bookstore_db/bookstorev1cache"
-	"github.com/the-protobuf-project/cache/examples/generated/gorm/bookstore_db/bookstorev1"
+	"github.com/the-protobuf-project/cache/examples/generated/gorm/bookstoredb/bookstorev1"
 )
 
 // TestReadThroughAndInvalidation checks the decorator does the thing it is for:

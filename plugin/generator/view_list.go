@@ -43,7 +43,7 @@ type listView struct {
 
 func buildListFile(banner, repositoryModule, database string, s *spec.Schema, msgs map[string]goMessage) (listFileView, error) {
 	repoPkg := naming.GoPackage(s.Name)
-	repoImport := path.Join(repositoryModule, database, repoPkg)
+	repoImport := path.Join(repositoryModule, naming.GoPackage(database), repoPkg)
 	f := listFileView{
 		Banner:      banner,
 		Package:     s.GoPackage,

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"github.com/the-protobuf-project/protokit/naming"
 	"go/format"
 	"path"
 	"text/template"
@@ -121,7 +122,10 @@ func (t *Target) GenerateIR(p *protogen.Plugin, ir *protokit.IR) error {
 
 // renderSchema writes one schema's cache.go.
 func (t *Target) renderSchema(p *protogen.Plugin, ir *protokit.IR, db *spec.Database, s *spec.Schema) error {
-	storeImport := path.Join(t.StoreModule, db.Name, s.StoreGoPackage)
+	// protoc-gen-store names a database's directory naming.GoPackage(name) (its
+	// gopkg.Dir: bookstore_db becomes bookstoredb); the raw name pointed at a
+	// directory store has not written since v1.7.
+	storeImport := path.Join(t.StoreModule, naming.GoPackage(db.Name), s.StoreGoPackage)
 
 	banner := Render("//", header.Info{
 		ProtocVersion: protocVersion(p),

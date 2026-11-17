@@ -7,7 +7,7 @@
 // database: bookstore_db
 // schema:   bookstore_v1
 //
-// annotations: entity.v1 v1.6.10, cache.v1 dev
+// annotations: entity.v1 v1.8.0, cache.v1 dev
 // engine:      protokit v1.4.0
 // runtime:     github.com/the-protobuf-project/runtime-go/cache
 //
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-protobuf-project/cache/examples/generated/gorm/bookstore_db/bookstorev1"
+	"github.com/the-protobuf-project/cache/examples/generated/gorm/bookstoredb/bookstorev1"
 	"github.com/the-protobuf-project/runtime-go/cache"
 )
 
