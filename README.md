@@ -35,6 +35,7 @@
 - [What a write reaches](#what-a-write-reaches)
 - [Caching lists](#caching-lists)
 - [Two paths, and they do not stack](#two-paths-and-they-do-not-stack)
+- [Rust output](#rust-output)
 - [Architecture](#architecture)
 - [What it does not do](#what-it-does-not-do)
 - [Development](#development)
@@ -546,6 +547,101 @@ db = cached.Wrap(db, cached.FromAside(cdb, cache.TTL(time.Minute)))
 the decorator hits, or misses and calls a store whose driver caches the same row
 again under a different key — and an invalidation through one leaves the other
 serving what it just invalidated.
+
+## Rust output
+
+`lang=rust` renders the same decisions for
+[runtime-rs](https://github.com/the-protobuf-project/runtime-rs): one `cache.rs` per
+proto package (`bookstore/v1/cache.rs`), in front of the repositories protoc-gen-store
+generates with `lang=rust target=repository`.
+
+```yaml
+plugins:
+  - local: protoc-gen-cache
+    out: src/generated
+    opt:
+      - lang=rust
+      - rust_repository_module=crate::repository::{package}   # the default
+      - rust_proto_module=crate::pb::{package}                 # the default
+```
+
+`{package}` is the proto package as a module path (`bookstore.v1` -> `bookstore::v1`).
+`rust_repository_module` is where the package's `Repositories` struct is,
+`rust_proto_module` where its prost types are. No `go_package` or `M` option is needed.
+
+### What is generated
+
+Per package, exactly this to wire against:
+
+```rust
+pub fn cache_repositories(repos: Repositories, cache: Arc<cache::DB>) -> Repositories;
+pub fn cache_repositories_with(repos: Repositories, cache: Arc<cache::DB>, hooks: Hooks) -> Repositories;
+```
+
+Each field of `Repositories` whose resource is annotated is replaced by a cached
+`Arc<dyn Repository<pb::Model>>`; every other field is returned as it was. Beside them:
+a `Keyspace` static per cached resource, a `<model>_plan()` per resource, and
+`INVALIDATION_EDGES`, the declared edges as data.
+
+```rust
+let repos = bookstore::v1::repositories(db, pool)?;                 // protoc-gen-store
+let cdb = provider.set_database("bookstore").await?;               // any name; see below
+let repos = bookstore::v1::cache::cache_repositories(repos, Arc::new(cdb));
+```
+
+**Generated versus generic.** The decorator is not generated: it is runtime-rs's
+`database::repository::cached`, written and tested once. What is generated is each
+resource's `Plan`, everything that differs between resources, as data: its namespace
+parts and pattern, strategy, `ttl` and `stale`, its index fields, its edges and their
+targets' keyspaces, its list cache, and one plain function per proto field the decorator
+reads (the name, each index value, each edge's reference).
+
+### Parity with Go
+
+- **Refusals.** The same spec builds both outputs, so every refusal above applies
+  unchanged. Rust adds one: a field forced into scope with `(cache.v1.cache_scope)` that
+  is **not** a segment of the pattern. A Rust repository is asked for a record by name
+  alone, and the decorator derives the namespace from that name, so on a get nothing says
+  what such a field's value is. Generation is refused rather than caching without it.
+- **Keys.** Byte for byte Go's: `{prefix}:{namespace}:cache:aside:entry:{id}`, the
+  namespace derived exactly as Go derives it. Go is constructed per scope; a Rust
+  repository serves every parent, so each record's namespace is read from its name
+  (`authors/ursula/books/lhd` -> `bookstore.v1.book.author.ursula`) and the cache database
+  is selected under it (`cache::DB::under`). The database you pass supplies the connection,
+  prefix and policy; its own name is not used. The scope value is the parent segment of
+  the name, which matches Go's when the Go caller's scope field holds that same segment.
+- **Ids and values.** The id is the resource name, the record's key in runtime-rs. The
+  value is the proto wire encoding as a base64 JSON string, Go's encoding of a `[]byte`
+  and what runtime-go's `database/cached` stores. Go's *store* decorator caches its GORM
+  model as JSON, keyed by the store's primary key, so the two record caches meet only where
+  that primary key is the name, and do not read each other's values: a value the Rust
+  decorator cannot decode is dropped and read through, never returned. Give each its own
+  `Config.Prefix` if both run.
+- **Writes.** As Go: create, update and undelete refresh the entry (one load, finding 7),
+  refile the indexes (update, then create), and fire every declared edge; delete and purge
+  unfile and invalidate, and fire no edge, as Go's `DeleteByID` does not. A failure after
+  the commit does not fail the write; `Hooks::write_errors` observes it and
+  `Hooks::strict_writes` makes it fail, Go's `WithWriteErrors` and `WithStrictWrites`.
+  An edge's reference may hold the target's name or, for a one-variable pattern, its id.
+- **Lists.** Go's scheme: per-parent versions, pages under `{base}.list`, the page key
+  Go's SHA-256 of the request (encoded as Go's `encoding/json` encodes it), the page Go's
+  `listPage`. The decorator sees its own writes, so no observer is wired. The repository's
+  `list` takes no parent, so a nested resource's pages read the version every write moves
+  on (Go's `-`); a top-level resource shares its pages with Go.
+
+**Gaps.** The constructor is infallible, so there is no startup capability probe: an
+`INDEXED` resource on memcached reports `Unsupported` to the write hook on each write
+instead of refusing at startup, and reads still work. There are no typed index
+accessors (`ByISBN`): the `Repository` contract has nowhere to put them, so `INDEXED`
+maintains the index for other readers. `negative_ttl` is not applied, in either language.
+
+`examples/rust` compiles the golden output against runtime-rs and tests hit, miss,
+absence, scoping, edges, refiling, the write-error policy and both list shapes over an
+in-memory repository and tpp-cache's in-memory driver:
+
+```sh
+(cd examples/rust && cargo test)
+```
 
 ## Architecture
 
