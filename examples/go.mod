@@ -17,10 +17,12 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/oklog/ulid/v2 v2.1.2 // indirect
 	github.com/redis/go-redis/v9 v9.18.0 // indirect
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7 // indirect
+	github.com/stretchr/testify v1.12.1 // indirect
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261021141431-6d4588022f2b // indirect
 	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-00010101000000-000000000000 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
 
 // runtime-go/cache requires its three siblings at v0.0.0 and resolves that with a
