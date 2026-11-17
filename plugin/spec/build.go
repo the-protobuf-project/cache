@@ -11,6 +11,10 @@ package spec
 import (
 	"fmt"
 	"sort"
+	"strings"
+
+	"google.golang.org/genproto/googleapis/api/annotations"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/the-protobuf-project/protokit"
 	"github.com/the-protobuf-project/protokit/naming"
@@ -136,6 +140,7 @@ func buildResource(ir *protokit.IR, t *schema.Table) (*Resource, error) {
 	if p := res.GetPattern(); len(p) > 0 {
 		r.Pattern = p[0]
 	}
+	r.Package, r.Message, r.Plural, r.NameField = protoIdentity(t, res)
 
 	ns, err := buildNamespace(ir, t, r, opts, defaults)
 	if err != nil {
@@ -148,4 +153,31 @@ func buildResource(ir *protokit.IR, t *schema.Table) (*Resource, error) {
 	}
 	r.Requires = requirements(r)
 	return r, nil
+}
+
+// protoIdentity returns where a table's message lives in proto terms: its
+// package, its name within the package, the resource's plural, and the field
+// carrying its resource name (google.api.resource name_field, else "name").
+func protoIdentity(t *schema.Table, res *annotations.ResourceDescriptor) (pkg, message, plural, nameField string) {
+	pkg = string(t.Source.ParentFile().Package())
+	message = strings.TrimPrefix(string(t.Source.FullName()), pkg+".")
+	plural = res.GetPlural()
+	nameField = res.GetNameField()
+	if nameField == "" {
+		nameField = "name"
+	}
+	if t.Source.Fields().ByName(protoreflect.Name(nameField)) == nil {
+		nameField = "" // no such field; Rust output refuses (see rust.go)
+	}
+	return pkg, message, plural, nameField
+}
+
+// protoFieldOf returns the proto field behind a column and whether it was
+// declared `optional`. A synthesized column has none, and answers with its
+// own name.
+func protoFieldOf(c *schema.Column) (string, bool) {
+	if c.Source == nil {
+		return c.Name, false
+	}
+	return string(c.Source.Name()), c.Source.HasOptionalKeyword()
 }

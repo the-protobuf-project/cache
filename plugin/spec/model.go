@@ -115,6 +115,16 @@ type Resource struct {
 	ResourceType string
 	Pattern      string
 
+	// Package is the proto package the message is declared in, and Message its
+	// name within it ("Book"; "Outer.Inner" for a nested message). Plural is
+	// the resource's plural, and NameField the field holding its resource
+	// name. Go output needs none of them; Rust output is per proto package and
+	// addresses a record by its name.
+	Package   string
+	Message   string
+	Plural    string
+	NameField string
+
 	Strategy    Strategy
 	TTL         time.Duration
 	Stale       time.Duration
@@ -148,6 +158,11 @@ type IndexField struct {
 
 	// Column is the neutral column name.
 	Column string
+
+	// ProtoField is the proto field behind the column, and ProtoOptional
+	// whether it was declared `optional` (and so has presence).
+	ProtoField    string
+	ProtoOptional bool
 
 	// GoField is the field on the generated model, for the typed accessor.
 	GoField string

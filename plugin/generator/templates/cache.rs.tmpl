@@ -1,0 +1,167 @@
+{{ .Banner }}
+
+//! Cache wiring for the `{{ .Package }}` repositories.
+//!
+//! [`cache_repositories`] puts a cache in front of every repository of this package
+//! whose resource is annotated `(cache.v1.cache)`, and leaves the rest as they are. The
+//! decorator is runtime-rs's `database::repository::cached`; what is generated here is
+//! each resource's [`Plan`]: where its entries live, how long they last, what a write to
+//! it reaches. Entries are where protoc-gen-cache's Go output puts them, byte for byte,
+//! so a Go and a Rust service over one cache share keyspaces.
+//!
+//! Pass the cache database any name: the decorator uses its connection, prefix and
+//! policy, and selects each resource's own namespace under it.
+
+use std::sync::Arc;
+{{- if .HasDuration }}
+use std::time::Duration;
+{{- end }}
+{{ if .ImportsInline }}
+use database::repository::cached::{ {{- .Imports -}} };
+{{- else }}
+use database::repository::cached::{
+    {{ .Imports }},
+};
+{{- end }}
+
+use {{ .ProtoUse }};
+use {{ .RepoModule }}::Repositories;
+{{- range .Keyspaces }}
+
+/// Where `{{ .Node }}`'s record entries live: the namespace `{{ .Namespace }}`
+/// over `{{ .Pattern }}`.{{ if .Foreign }} Repeated from its own package's cache wiring for
+/// the edge that targets it.{{ end }}
+pub static {{ .Static }}: Keyspace = Keyspace {
+    resource: {{ printf "%q" .Node }},
+    model: {{ printf "%q" .Model }},
+    pattern: {{ printf "%q" .Pattern }},
+{{- if .Inline }}
+    namespace: &[{{ range $i, $p := .Parts }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}],
+{{- else }}
+    namespace: &[
+{{- range .Parts }}
+        {{ . }},
+{{- end }}
+    ],
+{{- end }}
+};
+{{- end }}
+
+/// Which writes make which other resources' cached entries stale, as data: the edges
+/// the plans below fire, declared rather than walked.
+{{- if not .Edges }}
+pub static INVALIDATION_EDGES: &[DeclaredEdge] = &[];
+{{- else if eq (len .Edges) 1 }}
+{{- with index .Edges 0 }}
+pub static INVALIDATION_EDGES: &[DeclaredEdge] = &[DeclaredEdge {
+    from: {{ printf "%q" .From }},
+    to: {{ printf "%q" .To }},
+    via: {{ printf "%q" .Via }},
+    reason: {{ printf "%q" .Reason }},
+}];
+{{- end }}
+{{- else }}
+pub static INVALIDATION_EDGES: &[DeclaredEdge] = &[
+{{- range .Edges }}
+    DeclaredEdge {
+        from: {{ printf "%q" .From }},
+        to: {{ printf "%q" .To }},
+        via: {{ printf "%q" .Via }},
+        reason: {{ printf "%q" .Reason }},
+    },
+{{- end }}
+];
+{{- end }}
+{{- range .Resources }}
+
+/// The cache plan for `{{ .Node }}`.
+{{- range .Warnings }}
+///
+/// WARNING: {{ . }}
+{{- end }}
+pub fn {{ .PlanFn }}() -> Plan<{{ .Type }}> {
+    Plan {
+        name: {{ .NameExpr }},
+{{- if .Record }}
+        record: Some(Record {
+            keyspace: &{{ .Record.Keyspace }},
+            strategy: {{ .Record.Strategy }},
+            ttl: {{ .Record.TTL }},
+            stale: {{ .Record.Stale }},
+{{- if eq (len .Record.Indexes) 1 }}
+{{- with index .Record.Indexes 0 }}
+            indexes: vec![Index {
+                field: {{ printf "%q" .Field }},
+                value: {{ .Value }},
+            }],
+{{- end }}
+{{- else if .Record.Indexes }}
+            indexes: vec![
+{{- range .Record.Indexes }}
+                Index {
+                    field: {{ printf "%q" .Field }},
+                    value: {{ .Value }},
+                },
+{{- end }}
+            ],
+{{- else }}
+            indexes: Vec::new(),
+{{- end }}
+{{- if .Record.Edges }}
+            edges: vec![
+{{- range .Record.Edges }}
+                // {{ .Reason }}
+                Edge {
+                    target: &{{ .Target }},
+                    via: {{ .Via }},
+                },
+{{- end }}
+            ],
+{{- else }}
+            edges: Vec::new(),
+{{- end }}
+        }),
+{{- else }}
+        record: None,
+{{- end }}
+{{- if .List }}
+        list: Some(List {
+            resource: {{ printf "%q" .Node }},
+            namespace: {{ .List.Namespace }},
+            collections: {{ .List.Collections }},
+            parented: {{ .List.Parented }},
+            ttl: {{ .List.TTL }},
+        }),
+{{- else }}
+        list: None,
+{{- end }}
+    }
+}
+{{- end }}
+
+/// `repos` with every cached resource's repository behind its cache, over `cache`.
+pub fn cache_repositories(repos: Repositories, cache: Arc<cache::DB>) -> Repositories {
+    cache_repositories_with(repos, cache, Hooks::default())
+}
+
+/// [`cache_repositories`], with `hooks` observing (or, for strict writes, returning) the
+/// cache failures it otherwise absorbs.
+pub fn cache_repositories_with(
+    mut repos: Repositories,
+    cache: Arc<cache::DB>,
+    hooks: Hooks,
+) -> Repositories {
+{{- range .Resources }}
+{{- if .WrapInline }}
+    repos.{{ .Field }} = cached::wrap_with(repos.{{ .Field }}, cache.clone(), {{ .PlanFn }}(), hooks.clone());
+{{- else }}
+    repos.{{ .Field }} = cached::wrap_with(
+        repos.{{ .Field }},
+        cache.clone(),
+        {{ .PlanFn }}(),
+        hooks.clone(),
+    );
+{{- end }}
+{{- end }}
+    repos
+}

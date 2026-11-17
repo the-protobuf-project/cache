@@ -34,10 +34,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path"
+	"path/filepath"
 	"runtime/debug"
+	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/pluginpb"
 
 	"github.com/the-protobuf-project/protokit"
@@ -118,13 +123,21 @@ func main() {
 	repositoryModule := flags.String("repository_module", "",
 		"Go import path of protoc-gen-store's repository output directory (e.g. github.com/me/gen/repository); "+
 			"the generated list caches import the repository interfaces and repox from under it")
+	lang := flags.String("lang", "go",
+		"output language: go (decorators over protoc-gen-store's Go stores) or rust (cache plans "+
+			"over protoc-gen-store's lang=rust target=repository output)")
+	rustRepositoryModule := flags.String("rust_repository_module", generator.DefaultRustRepositoryModule,
+		"lang=rust: the Rust module holding each package's Repositories struct; {package} is the "+
+			"proto package as a module path (bookstore.v1 -> bookstore::v1)")
+	rustProtoModule := flags.String("rust_proto_module", generator.DefaultRustProtoModule,
+		"lang=rust: the Rust module holding each package's prost types; {package} as above")
 	configPath := flags.String("config", "",
 		"path to a cache.yaml mapping proto packages to databases/schemas")
 	strict := flags.String("strict", "",
 		"per-rule severity for schema problems: \"\"=all warn, \"true\"=all error, "+
 			"or \"ref:error,collision:warn,index:error,lint:warn\"")
 
-	protogen.Options{ParamFunc: flags.Set}.Run(func(p *protogen.Plugin) error {
+	run(flags.Set, func(p *protogen.Plugin) error {
 		// Proto3 `optional` is fully supported (presence is read via
 		// field_behavior, not synthetic oneofs); declare it so buf/protoc do not
 		// warn.
@@ -142,9 +155,86 @@ func main() {
 		// renderer, because build info describes what *this process* linked
 		// against — a fact about an invocation. Resolving it at render time made
 		// every golden file record the build environment that produced it.
+		target := generator.TargetName
+		switch *lang {
+		case "go", "":
+		case "rust":
+			target = generator.RustTargetName
+		default:
+			return fmt.Errorf("cache: lang=%q: want go or rust", *lang)
+		}
+		mods := generator.Modules{
+			Store:      *storeModule,
+			Repository: *repositoryModule,
+			Rust:       generator.RustModules{Repository: *rustRepositoryModule, Proto: *rustProtoModule},
+		}
 		return protokit.RunPlugin(p,
-			protokit.Options{Target: generator.TargetName, Strict: *strict, Version: v},
-			generator.Plugin(generator.Modules{Store: *storeModule, Repository: *repositoryModule},
+			protokit.Options{Target: target, Strict: *strict, Version: v},
+			generator.Plugin(mods,
 				generator.ResolveVersions(v), cfg.Layout(), cfg.Rules()...))
 	})
+}
+
+// run is protogen.Options.Run, except that a lang=rust request needs no Go
+// import paths: protogen refuses any file without one, and Rust output names
+// none, so each file lacking a go_package gets a placeholder M mapping first.
+func run(param func(name, value string) error, gen func(*protogen.Plugin) error) {
+	if err := runE(os.Stdin, os.Stdout, param, gen); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", filepath.Base(os.Args[0]), err)
+		os.Exit(1)
+	}
+}
+
+func runE(in io.Reader, out io.Writer, param func(name, value string) error, gen func(*protogen.Plugin) error) error {
+	raw, err := io.ReadAll(in)
+	if err != nil {
+		return err
+	}
+	req := &pluginpb.CodeGeneratorRequest{}
+	if err := proto.Unmarshal(raw, req); err != nil {
+		return err
+	}
+	if rustRequest(req.GetParameter()) {
+		req.Parameter = proto.String(withPlaceholderImports(req))
+	}
+	p, err := protogen.Options{ParamFunc: param}.New(req)
+	if err != nil {
+		return err
+	}
+	if err := gen(p); err != nil {
+		p.Error(err)
+	}
+	b, err := proto.Marshal(p.Response())
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(b)
+	return err
+}
+
+// rustRequest reports whether the plugin parameter selects lang=rust.
+func rustRequest(param string) bool {
+	for _, kv := range strings.Split(param, ",") {
+		if strings.TrimSpace(kv) == "lang=rust" {
+			return true
+		}
+	}
+	return false
+}
+
+// withPlaceholderImports returns the request's parameter with an M mapping
+// for every file that has no go_package and no mapping already.
+func withPlaceholderImports(req *pluginpb.CodeGeneratorRequest) string {
+	param := req.GetParameter()
+	for _, f := range req.GetProtoFile() {
+		if f.GetOptions().GetGoPackage() != "" || strings.Contains(param, "M"+f.GetName()+"=") {
+			continue
+		}
+		dir := path.Dir(f.GetName())
+		if param != "" {
+			param += ","
+		}
+		param += "M" + f.GetName() + "=protoc-gen-cache.invalid/rust/" + dir
+	}
+	return param
 }

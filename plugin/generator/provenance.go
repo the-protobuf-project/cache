@@ -111,17 +111,23 @@ func moduleVersion(path string) string {
 // Render renders in's banner with v's provenance lines appended, prefixed by
 // prefix ("//" for Go).
 func Render(prefix string, in header.Info, v Versions) string {
+	return RenderFor(prefix, in, v, runtimeModule)
+}
+
+// RenderFor is Render naming another runtime in the banner: Rust output runs
+// on runtime-rs, not runtime-go.
+func RenderFor(prefix string, in header.Info, v Versions, runtime string) string {
 	in.PluginVersion = orUnknown(v.Plugin)
-	in.Notes = append(in.Notes, notes(v)...)
+	in.Notes = append(in.Notes, notes(v, runtime)...)
 	return header.Render(prefix, in)
 }
 
 // notes builds the provenance lines.
-func notes(v Versions) []string {
+func notes(v Versions, runtime string) []string {
 	return []string{
 		"annotations: entity.v1 " + orUnknown(v.Entity) + ", cache.v1 " + orUnknown(v.Plugin),
 		"engine:      protokit " + orUnknown(v.Engine),
-		"runtime:     " + runtimeModule,
+		"runtime:     " + runtime,
 	}
 }
 

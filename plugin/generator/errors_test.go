@@ -171,3 +171,86 @@ func TestListNeedsRepositoryModule(t *testing.T) {
 		t.Fatalf("got %v, want a refusal naming the repository_module opt", err)
 	}
 }
+
+// TestRustRefusals pins the refusals lang=rust adds, and that it keeps the
+// ones it shares with Go.
+func TestRustRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		dir   string
+		why   string
+		wants []string
+	}{
+		{
+			// Audit forces "region" into its namespace, and region is no
+			// segment of its pattern: a get by name cannot know it.
+			dir: filepath.Join("cases", "warnings"),
+			why: "a scope field that is not a segment of the pattern",
+			wants: []string{
+				"tenancy.v1.Audit",
+				"lang=rust",
+				`"region"`,
+				"orgs/{org}/audits/{audit}",
+				"one tenant reading another's rows",
+			},
+		},
+		{
+			dir:   filepath.Join("errors", "unbound_parent"),
+			why:   "a nested resource whose parent segment is not bound (shared with Go)",
+			wants: []string{"tenancy.v1.Document", "{user}", "(cache.v1.cache_scope)"},
+		},
+	} {
+		t.Run(tc.dir, func(t *testing.T) {
+			req := golden.BuildRequest(t, filepath.Join("testdata", tc.dir))
+			p, err := protogen.Options{}.New(req)
+			if err != nil {
+				t.Fatalf("protogen: %v", err)
+			}
+			err = protokit.RunPlugin(p, protokit.Options{Target: generator.RustTargetName},
+				generator.Plugin(testModules, testVersions, nil))
+			if err == nil {
+				t.Fatalf("generation succeeded, want a refusal: this case is %s", tc.why)
+			}
+			for _, want := range tc.wants {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not mention %q (%s).\n\nGot:\n%s", want, tc.why, err)
+				}
+			}
+		})
+	}
+}
+
+// TestRustOutputNamesOnlyItsContract asserts the Rust output reaches the
+// runtime through database::repository::cached alone, and names nothing of
+// the other generators but the two modules its options point at.
+func TestRustOutputNamesOnlyItsContract(t *testing.T) {
+	for _, c := range []string{"bookstore", "lists"} {
+		root := filepath.Join("testdata", "cases", c, "golden", generator.RustTargetName)
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, line := range strings.Split(string(b), "\n") {
+				if !strings.HasPrefix(line, "use ") {
+					continue
+				}
+				switch {
+				case strings.HasPrefix(line, "use std::"),
+					strings.HasPrefix(line, "use database::repository::cached::"),
+					strings.HasPrefix(line, "use crate::pb::"),
+					strings.HasPrefix(line, "use crate::repository::"):
+				default:
+					t.Errorf("%s: %q: the output may use std, database::repository::cached, and "+
+						"the proto and repository modules, nothing else", path, line)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

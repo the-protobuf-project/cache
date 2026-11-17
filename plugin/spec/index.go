@@ -102,14 +102,17 @@ func buildIndexes(ir *protokit.IR, t *schema.Table, r *Resource) error {
 		// below fired essentially never.
 		unique := c.Unique || c.PrimaryKey || storeUnique
 
+		protoField, protoOptional := protoFieldOf(c)
 		r.Indexes = append(r.Indexes, IndexField{
-			Field:    field,
-			Column:   c.Name,
-			GoField:  GoFieldOf(c),
-			Accessor: naming.PascalGo(c.Name),
-			Optional: isPointer(c),
-			Unique:   unique,
-			Known:    storeSaid,
+			Field:         field,
+			Column:        c.Name,
+			ProtoField:    protoField,
+			ProtoOptional: protoOptional,
+			GoField:       GoFieldOf(c),
+			Accessor:      naming.PascalGo(c.Name),
+			Optional:      isPointer(c),
+			Unique:        unique,
+			Known:         storeSaid,
 		})
 
 		// Advice, not a refusal: a low-cardinality index is legal, sometimes
