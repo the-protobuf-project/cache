@@ -9,11 +9,10 @@ description = "Compiles protoc-gen-cache's lang=rust golden output against runti
 [workspace]
 
 [dependencies]
-# runtime-rs by path. It points at the feat/cached-repository worktree (on top of
-# feat/repository-impl), which adds database::repository::cached and cache::DB::under;
-# switch to ../../../runtime/runtime-rs once that branch is merged.
-database = { package = "tpp-database", path = "../../../runtime/runtime-rs/database", default-features = false, features = ["cached"] }
-cache = { package = "tpp-cache", path = "../../../runtime/runtime-rs/cache" }
+# runtime-rs at the merge of runtime-rs#49, which added database::repository::cached and
+# cache::DB::under, the runtime the generated decorators are written against.
+database = { package = "tpp-database", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "53f2ffbfefc2caa2c02ba4d62637ede614103b17", default-features = false, features = ["cached"] }
+cache = { package = "tpp-cache", git = "https://github.com/the-protobuf-project/runtime-rs", rev = "53f2ffbfefc2caa2c02ba4d62637ede614103b17" }
 prost = "0.14"
 async-trait = "0.1"
 
