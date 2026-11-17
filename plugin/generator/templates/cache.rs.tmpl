@@ -24,8 +24,8 @@ use database::repository::cached::{
 };
 {{- end }}
 
-use {{ .ProtoUse }};
-use {{ .RepoModule }}::Repositories;
+{{ range $i, $u := .CrateUses }}{{ if $i }}
+{{ end }}use {{ $u }};{{ end }}
 {{- range .Keyspaces }}
 
 /// Where `{{ .Node }}`'s record entries live: the namespace `{{ .Namespace }}`

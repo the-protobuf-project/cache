@@ -83,8 +83,22 @@ impl<M: Clone + Send + Sync + 'static> Repository<M> for Fake<M> {
         } else {
             input.page_size as usize
         };
+        // Under `parent`, `-` matching any id; empty is every parent.
+        let under = |name: &str| {
+            if input.parent.is_empty() {
+                return true;
+            }
+            let want: Vec<&str> = input.parent.split('/').collect();
+            let have: Vec<&str> = name.split('/').collect();
+            have.len() == want.len() + 2 && want.iter().zip(&have).all(|(w, h)| *w == "-" || w == h)
+        };
         Ok(Page {
-            items: rows.values().take(size).cloned().collect(),
+            items: rows
+                .iter()
+                .filter(|(name, _)| under(name))
+                .map(|(_, m)| m.clone())
+                .take(size)
+                .collect(),
             next_page_token: String::new(),
         })
     }
@@ -482,12 +496,13 @@ struct Shelving {
     shelves: Arc<Fake<shelving::Shelf>>,
     notes: Arc<Fake<shelving::Note>>,
     repos: shelving_store::v1::Repositories,
+    driver: Arc<MemoryDriver>,
 }
 
 fn shelving_repos() -> Shelving {
     let shelves = Fake::new(|m: &shelving::Shelf| m.name.clone());
     let notes = Fake::new(|m: &shelving::Note| m.name.clone());
-    let (db, _) = cache_db();
+    let (db, driver) = cache_db();
     let repos = shelving_cache::cache_repositories(
         shelving_store::v1::Repositories {
             shelves: shelves.clone(),
@@ -499,6 +514,7 @@ fn shelving_repos() -> Shelving {
         shelves,
         notes,
         repos,
+        driver,
     }
 }
 
@@ -587,4 +603,69 @@ async fn a_nested_list_moves_on_with_a_write_under_any_parent() {
     s.repos.notes.get("shelves/a/notes/2").await.unwrap();
     s.repos.notes.get("shelves/a/notes/2").await.unwrap();
     assert_eq!(s.notes.gets(), before + 1);
+}
+
+/// The Volatile key of a list page, built with the runtime's own keyspace.
+fn page_key(namespace: &str, version: &str, digest: &str) -> String {
+    Keyspace::new(PREFIX, namespace, 0, false).vol_entry(&format!("page:{version}:{digest}"))
+}
+
+/// Go's `listKey` digests for the requests below, computed by Go's `encoding/json` and
+/// `crypto/sha256` over `struct{Parent string; In repox.ListInput}`:
+/// `List(ctx, "shelves/a", repox.ListInput{PageSize: 10})` and
+/// `List(ctx, "shelves/-", repox.ListInput{})`.
+const GO_NESTED: &str = "505ccbbb04506f5e02921c529b3512d39c65dfb08951cb22e2d40de310f18b5d";
+const GO_WILDCARD: &str = "a380b2e7a1f90f0c7e324a117a1dfb995adadbf4aa09aa378852b120ccf6e7e8";
+
+#[tokio::test]
+async fn a_nested_page_is_where_go_caches_it_and_versioned_per_parent() {
+    let s = shelving_repos();
+    s.notes.put(shelving::Note {
+        name: "shelves/a/notes/1".into(),
+    });
+    s.notes.put(shelving::Note {
+        name: "shelves/b/notes/1".into(),
+    });
+    let under_a = ListInput {
+        page_size: 10,
+        parent: "shelves/a".into(),
+        ..ListInput::default()
+    };
+    let any = ListInput {
+        parent: "shelves/-".into(),
+        ..ListInput::default()
+    };
+
+    assert_eq!(s.repos.notes.list(&under_a).await.unwrap().items.len(), 1);
+    assert_eq!(s.repos.notes.list(&any).await.unwrap().items.len(), 2);
+    assert_eq!(s.notes.lists(), 2);
+
+    // Before any write a parent's version is "0", so the keys are Go's, byte for byte.
+    let ns = "shelving.v1.note.list";
+    assert!(s.driver.get(&page_key(ns, "0", GO_NESTED)).await.is_ok());
+    assert!(s.driver.get(&page_key(ns, "0", GO_WILDCARD)).await.is_ok());
+
+    // A write under b moves b's version and the wildcard's, not a's.
+    s.repos
+        .notes
+        .create(&shelving::Note {
+            name: "shelves/b/notes/2".into(),
+        })
+        .await
+        .unwrap();
+    s.repos.notes.list(&under_a).await.unwrap();
+    assert_eq!(s.notes.lists(), 2, "a's page is still current");
+    assert_eq!(s.repos.notes.list(&any).await.unwrap().items.len(), 3);
+    assert_eq!(s.notes.lists(), 3, "the wildcard page moved on");
+
+    // A write under a moves a's.
+    s.repos
+        .notes
+        .create(&shelving::Note {
+            name: "shelves/a/notes/2".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(s.repos.notes.list(&under_a).await.unwrap().items.len(), 2);
+    assert_eq!(s.notes.lists(), 4);
 }

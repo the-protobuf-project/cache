@@ -638,9 +638,11 @@ reads (the name, each index value, each edge's reference).
   An edge's reference may hold the target's name or, for a one-variable pattern, its id.
 - **Lists.** Go's scheme: per-parent versions, pages under `{base}.list`, the page key
   Go's SHA-256 of the request (encoded as Go's `encoding/json` encodes it), the page Go's
-  `listPage`. The decorator sees its own writes, so no observer is wired. The repository's
-  `list` takes no parent, so a nested resource's pages read the version every write moves
-  on (Go's `-`); a top-level resource shares its pages with Go.
+  `listPage`. The decorator sees its own writes, so no observer is wired. `ListInput.parent`
+  is Go's `List(ctx, parent, in)` parent: a list reads that parent's version (every
+  parent's for a `-`, or for an empty parent on a nested resource), and the page key hashes
+  it beside `repox.ListInput` exactly as Go does, so nested and top-level pages are shared
+  with Go. The key matches a Go `repox.ListInput` with `Where` and `ReadMask` unset.
 
 **Gaps.** The constructor is infallible, so there is no startup capability probe: an
 `INDEXED` resource on memcached reports `Unsupported` to the write hook on each write

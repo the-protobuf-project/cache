@@ -27,6 +27,10 @@ type rustFileView struct {
 	// ProtoUse is the use of ProtoModule as `pb`.
 	ProtoUse string
 
+	// CrateUses are the uses of the prost and repository modules, in the order
+	// rustfmt sorts them, so a crate formatting the file sees no diff.
+	CrateUses []string
+
 	Keyspaces []rustKeyspace
 	Resources []rustResource
 	Edges     []edgeView
@@ -247,6 +251,8 @@ func buildRustFiles(sp *spec.Spec, mods RustModules) ([]*rustFileView, error) {
 			names = append(names, "List")
 		}
 		sort.Strings(names)
+		f.CrateUses = []string{f.ProtoUse, f.RepoModule + "::Repositories"}
+		sort.Strings(f.CrateUses)
 		f.Imports = "self, " + strings.Join(names, ", ")
 		f.ImportsInline = len("use database::repository::cached::{"+f.Imports+"};") <= rustMaxWidth
 		sort.Slice(f.Resources, func(i, j int) bool { return f.Resources[i].Node < f.Resources[j].Node })
