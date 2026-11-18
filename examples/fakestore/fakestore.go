@@ -27,7 +27,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/the-protobuf-project/cache/examples/generated/gorm/bookstore_db/bookstorev1"
+	"github.com/the-protobuf-project/cache/examples/generated/gorm/bookstoredb/bookstorev1"
 )
 
 // Authors is an in-memory AuthorStoreIface.

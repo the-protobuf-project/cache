@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-protobuf-project/cache/examples/generated/gorm/tenancy_db/tenancy"
+	"github.com/the-protobuf-project/cache/examples/generated/gorm/tenancydb/tenancy"
 	"github.com/the-protobuf-project/runtime-go/cache"
 )
 

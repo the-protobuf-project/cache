@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-protobuf-project/cache/examples/generated/gorm/shelving_db/shelving"
+	"github.com/the-protobuf-project/cache/examples/generated/gorm/shelvingdb/shelving"
 	"github.com/the-protobuf-project/runtime-go/cache"
 )
 

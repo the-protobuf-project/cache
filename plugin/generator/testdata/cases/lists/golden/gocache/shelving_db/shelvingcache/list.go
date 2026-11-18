@@ -47,7 +47,7 @@ import (
 	"time"
 
 	"example.com/generated/repository/repox"
-	"example.com/generated/repository/shelving_db/shelving"
+	"example.com/generated/repository/shelvingdb/shelving"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/cache"
 	"google.golang.org/protobuf/proto"

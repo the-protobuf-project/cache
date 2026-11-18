@@ -772,7 +772,7 @@ golangci-lint run && (cd examples && golangci-lint run)   # both modules: it doe
 # and an unpinned build reports whatever Go derives from the checkout — a
 # pseudo-version at a clean commit, "(devel)" on a dirty tree — so the committed
 # examples would never reproduce. CI pins the same value.
-go install github.com/the-protobuf-project/store/plugin/cmd/protoc-gen-store@v1.5.1
+go install github.com/the-protobuf-project/store/plugin/cmd/protoc-gen-store@v1.8.0
 go install -ldflags "-X main.version=dev" ./plugin/cmd/protoc-gen-cache
 buf generate --template buf.gen.example.yaml
 ```
