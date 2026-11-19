@@ -52,8 +52,8 @@ func buildListFile(banner, repositoryModule, database string, s *spec.Schema, ms
 	// Imports by path, each named by the package it declares: no aliases, so
 	// two that declare one name are refused rather than renamed.
 	names := map[string]string{
-		repoImport:                           repoPkg,
-		path.Join(repositoryModule, "repox"): "repox",
+		repoImport: repoPkg,
+		"github.com/the-protobuf-project/runtime-go/database/repox": "repox",
 	}
 	for _, l := range s.Lists {
 		m, ok := msgs[string(l.Node)]

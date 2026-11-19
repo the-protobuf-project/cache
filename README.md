@@ -704,7 +704,7 @@ expire on their own. A List across parents (an AIP-159 `-`) reads a version
 every write moves on. Readers never write a version — one finding none reads
 under `"0"` — so a reader can never resurrect a page a write retired.
 
-**How a write is seen (Go).** protoc-gen-store's `repox.Conn` carries a
+**How a write is seen (Go).** runtime-go's `database/repox` `Conn` (which protoc-gen-store's repositories build on) carries a
 `ChangeObserver`, and every repository and `Batch` built from that connection
 reports each record it writes to it, after the write commits. The generated
 `<Model>ListCache` is that observer:
