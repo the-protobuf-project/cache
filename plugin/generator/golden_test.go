@@ -104,13 +104,17 @@ func TestGeneratedOutputImports(t *testing.T) {
 		// A list cache stores pages of the messages its repository returns,
 		// in their wire encoding.
 		"google.golang.org/protobuf/proto": true,
+		// The repositories' runtime: from store v1.9.0 repox is runtime-go's
+		// rather than generated beside the repositories, and a list cache
+		// reads writes through its Conn.Changes.
+		"github.com/the-protobuf-project/runtime-go/database/repox": true,
 		// The messages' own Go package, as the golden harness maps every
 		// case's protos.
 		goldenGoPackage: true,
 	}
 	const storePrefix = storeModule + "/"
 	// A list cache wraps the repository interface, so it imports that tree
-	// (the per-schema package and repox) the way a record decorator imports
+	// (the per-schema package) the way a record decorator imports
 	// the store's.
 	const repositoryPrefix = repositoryModule + "/"
 

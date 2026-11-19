@@ -46,10 +46,10 @@ import (
 	"strings"
 	"time"
 
-	"example.com/generated/repository/repox"
 	"example.com/generated/repository/shelvingdb/shelving"
 	"example.com/test/gen"
 	"github.com/the-protobuf-project/runtime-go/cache"
+	"github.com/the-protobuf-project/runtime-go/database/repox"
 	"google.golang.org/protobuf/proto"
 )
 
