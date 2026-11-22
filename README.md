@@ -468,7 +468,7 @@ record's namespace is read from its name. Next: [Rust](#rust).
 | Go: `undefined: …StoreIface` | protoc-gen-store ran without `stores=true`. |
 | Go: `undefined: <Model>Edges` | The resource declares no edge: only a `google.api.resource_reference` to another cached resource makes one. |
 | Go: `ambiguous import: … store/plugin/entity/pb/entitypbv1 in multiple modules` | Require the store module itself: `go get github.com/the-protobuf-project/store@v1.8.0`. |
-| Go: `… is configured as INDEXED, which requires core.Sets` at startup | The backend can't serve the strategy (memcached has no sets). Use Redis or Dragonfly, or `STRATEGY_ASIDE`. |
+| Go: `… is configured as INDEXED, which requires core.Sets` at startup | The backend can't serve the strategy (memcached and Workers KV have no sets). Use Redis or Dragonfly, or `STRATEGY_ASIDE`. |
 | Rust: `unresolved module … cache` or `crate::bookstore` not found | `cache.rs` must land beside store's `mod.rs` (the same `out:`), and `rust_repository_module` must name where store's crate is mounted. |
 | Rust: `no method named set_database` | Bring the provider's trait into scope: `use cache::Provider as _;` / `use database::records::Provider as _;`. |
 | Rust: generation refused for a `cache_scope` field that is not a pattern segment | A Rust repository is asked for a record by name alone, so a scope must come from the name. Scope by a pattern segment. |
@@ -488,8 +488,8 @@ would describe output nothing will honor.
 
 A `stale` window on any of them additionally needs `core.Leases`.
 
-Nothing in `cache.v1` names a backend. Redis, Dragonfly and memcached differ in
-what they can do, and the runtime already models that as capabilities a driver
+Nothing in `cache.v1` names a backend. Redis, Dragonfly, memcached and Workers KV
+differ in what they can do, and the runtime already models that as capabilities a driver
 either has or does not:
 
 ```mermaid
@@ -508,6 +508,7 @@ radar-beta
   curve redis["Redis"]{1, 1, 1, 1, 1, 1}
   curve dragonfly["Dragonfly"]{1, 1, 1, 1, 1, 1}
   curve memcached["memcached"]{0, 0, 0, 0, 1, 0}
+  curve workerskv["Workers KV"]{0, 1, 0, 1, 1, 0}
 
   max 1
   min 0
@@ -522,6 +523,13 @@ server-side sets, so no index and no enumeration, and a protocol that stores an
 expiry but will never say what is left of it, so no stale window. An `INDEXED`
 resource on memcached would compile, construct, and then fail every lookup it
 exists to serve — on a code path a developer running Redis locally never reaches.
+
+Workers KV sits between them. It has no server-side sets either, so `INDEXED` and
+`DOCUMENT` are refused on it the same way, but it reports what is left of an
+entry's expiry, so `ASIDE` and `VOLATILE` resources can keep a `stale` window.
+Two things it does not promise: a write can take up to 60 seconds to be seen
+everywhere, and no entry lives less than 60 seconds, so a shorter `ttl` is
+raised to 60s.
 
 So the generated Go constructor **probes and refuses at startup**, naming the
 resource, the strategy and the missing capability (Rust's constructor is
