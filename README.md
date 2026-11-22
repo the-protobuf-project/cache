@@ -527,9 +527,9 @@ exists to serve — on a code path a developer running Redis locally never reach
 Workers KV sits between them. It has no server-side sets either, so `INDEXED` and
 `DOCUMENT` are refused on it the same way, but it reports what is left of an
 entry's expiry, so `ASIDE` and `VOLATILE` resources can keep a `stale` window.
-Two things it does not promise: a write can take up to 60 seconds to be seen
-everywhere, and no entry lives less than 60 seconds, so a shorter `ttl` is
-raised to 60s.
+Two things to plan for: a write can take 60 seconds or longer to be seen
+everywhere, with no upper bound promised, and no entry lives less than 60
+seconds, so a shorter `ttl` is raised to 60s.
 
 So the generated Go constructor **probes and refuses at startup**, naming the
 resource, the strategy and the missing capability (Rust's constructor is
