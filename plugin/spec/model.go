@@ -37,7 +37,7 @@ type Capability string
 // core: without them the strategy does not degrade, it refuses.
 const (
 	// CoreSets is server-side sets. Without them a backend cannot enumerate and
-	// cannot index; memcached has none.
+	// cannot index; memcached and Workers KV have none.
 	CoreSets Capability = "core.Sets"
 
 	// CoreLeases is a protocol that reports a remaining TTL. Memcache stores an
